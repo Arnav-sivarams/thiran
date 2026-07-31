@@ -1,0 +1,12 @@
+#pragma once
+
+#include <string_view>
+
+namespace thiran::version
+{
+inline constexpr std::string_view string = "@THIRAN_VERSION@";
+inline constexpr int major = @THIRAN_VERSION_MAJOR@;
+inline constexpr int minor = @THIRAN_VERSION_MINOR@;
+inline constexpr int patch = @THIRAN_VERSION_PATCH@;
+inline constexpr std::string_view prerelease = "@THIRAN_VERSION_PRERELEASE@";
+}

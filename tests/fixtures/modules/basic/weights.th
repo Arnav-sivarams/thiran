@@ -1,0 +1,4 @@
+// Imported values are immutable module exports.
+export W = Constant(1, 2, 2)
+Local = Constant(2, 2, 2)
+export B = Add(W, Local)

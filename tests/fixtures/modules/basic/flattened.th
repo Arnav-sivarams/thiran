@@ -1,0 +1,7 @@
+W = Constant(1, 2, 2)
+Local = Constant(2, 2, 2)
+B = Add(W, Local)
+X = Input(2, 2)
+Y = MatMul(X, W)
+Z = Add(Y, B)
+O = Output(Z)

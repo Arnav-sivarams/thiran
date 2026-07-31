@@ -1,0 +1,6 @@
+import "weights.th" as weights
+
+X = Input(2, 2)
+Y = MatMul(X, weights.W)
+Z = Add(Y, weights.B)
+O = Output(Z)

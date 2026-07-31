@@ -1,0 +1,7 @@
+fn identity(x) {
+    return x
+}
+
+X = Input(2, 2)
+Y = identity(X)
+O = Output(Y)

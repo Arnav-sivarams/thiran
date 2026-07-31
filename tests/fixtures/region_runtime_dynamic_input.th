@@ -1,0 +1,3 @@
+X = Input(-1, 4)
+Y = ReLU(X)
+O = Output(Y)

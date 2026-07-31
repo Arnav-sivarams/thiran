@@ -1,0 +1,19 @@
+A = Input()
+B = Input()
+C = Input()
+
+M1 = MatMul(A, B)
+
+R1 = ReLU(M1)
+S1 = Sigmoid(M1)
+
+A1 = Add(R1, S1)
+
+M2 = Multiply(A1, C)
+
+R2 = ReLU(M2)
+S2 = Sigmoid(M2)
+
+A2 = Add(R2, S2)
+
+O1 = Output(A2)

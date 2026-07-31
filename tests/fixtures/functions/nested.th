@@ -1,0 +1,15 @@
+fn inner(x) {
+    result = ReLU(x)
+    return result
+}
+
+fn outer(x) {
+    first = inner(x)
+    middle = Sigmoid(first)
+    second = inner(middle)
+    return second
+}
+
+X = Input(2, 2)
+Y = outer(X)
+O = Output(Y)

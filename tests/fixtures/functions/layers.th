@@ -1,0 +1,6 @@
+export fn linear_relu(x, weight, bias) {
+    product = MatMul(x, weight)
+    biased = Add(product, bias)
+    activated = ReLU(biased)
+    return activated
+}

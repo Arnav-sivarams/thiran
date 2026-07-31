@@ -1,0 +1,8 @@
+fn recurse(x) {
+    again = recurse(x)
+    return again
+}
+
+X = Input(2, 2)
+Y = recurse(X)
+O = Output(Y)

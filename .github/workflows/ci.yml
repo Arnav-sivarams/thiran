@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-only:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake --preset no-tests
+      - name: Build
+        run: cmake --build --preset no-tests
+      - name: Verify compiler-only workflow
+        run: |
+          test "$(ctest --test-dir build/no-tests -N | sed -n 's/^Total Tests: //p')" = "0"
+          ./build/no-tests/Thiran --help
+          ./build/no-tests/Thiran --plan examples/cnn.th >/tmp/cnn-plan.txt
+          ./build/no-tests/Thiran --emit-region-executor examples/cnn.th /tmp/cnn-executor.py
+          ./build/no-tests/Thiran --plan tests/fixtures/modules/basic/main.th >/tmp/module-plan.txt
+          ./build/no-tests/Thiran --plan tests/fixtures/functions/cross_module.th >/tmp/function-plan.txt
+          ./build/no-tests/Thiran --emit-region-executor tests/fixtures/functions/cross_module.th /tmp/function-executor.py
+          cmake --preset install
+          cmake --build --preset install
+          cmake --install build/install --prefix /tmp/thiran-prefix
+          /tmp/thiran-prefix/bin/thiran --version
+          /tmp/thiran-prefix/bin/thiran --help
+          /tmp/thiran-prefix/bin/thiran --plan examples/cnn.th >/tmp/installed-plan.txt
+          /tmp/thiran-prefix/bin/thiran --emit-region-executor examples/cnn.th /tmp/installed-executor.py
+          /tmp/thiran-prefix/bin/thiran --plan "$GITHUB_WORKSPACE/tests/fixtures/modules/basic/main.th" >/tmp/installed-module-plan.txt
+          /tmp/thiran-prefix/bin/thiran --plan "$GITHUB_WORKSPACE/tests/fixtures/functions/cross_module.th" >/tmp/installed-function-plan.txt
+
+  debug:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          python -m pip install -r requirements-test.txt
+      - name: Configure and build
+        run: |
+          cmake --preset debug -DTHIRAN_PYTHON_EXECUTABLE="$(command -v python)"
+          cmake --build --preset debug
+      - name: Test
+        run: |
+          ctest --preset debug --output-on-failure
+          for test in region_ir_tests region_formation_tests strategy_classification_tests region_plan_tests region_plan_cli_support_tests region_python_emitter_tests region_python_runtime_tests installation_support_tests source_manager_tests module_linker_tests function_semantic_tests function_lowering_tests; do ./build/debug/"$test"; done
+      - name: CLI smoke
+        run: |
+          ./build/debug/Thiran --help
+          ./build/debug/Thiran --plan examples/cnn.th >/tmp/cnn-plan.txt
+          ./build/debug/Thiran --emit-region-executor examples/mlp.th /tmp/mlp-executor.py
+          python /tmp/mlp-executor.py --describe
+          ./build/debug/Thiran doctor
+          ./build/debug/Thiran --emit-region-executor tests/fixtures/modules/basic/main.th /tmp/module-executor.py
+          ./build/debug/Thiran --emit-region-executor tests/fixtures/functions/cross_module.th /tmp/function-executor.py
+
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          python -m pip install -r requirements-test.txt
+      - name: Configure, build, and test
+        run: |
+          cmake --preset release -DTHIRAN_PYTHON_EXECUTABLE="$(command -v python)"
+          cmake --build --preset release
+          ctest --preset release --output-on-failure
+          for test in region_ir_tests region_formation_tests strategy_classification_tests region_plan_tests region_plan_cli_support_tests region_python_emitter_tests region_python_runtime_tests installation_support_tests source_manager_tests module_linker_tests function_semantic_tests function_lowering_tests; do ./build/release/"$test"; done
+      - name: Normal and runtime smoke
+        run: |
+          temporary="$(mktemp -d)"
+          trap 'git restore -- generated.py graph.dot; rm -rf "$temporary"' EXIT
+          (cd "$temporary" && "$GITHUB_WORKSPACE/build/release/Thiran" "$GITHUB_WORKSPACE/examples/cnn.th")
+          (cd "$temporary" && "$GITHUB_WORKSPACE/build/release/Thiran" "$GITHUB_WORKSPACE/examples/mlp.th")
+          ./build/release/Thiran --emit-region-executor examples/mlp.th "$temporary/executor.py"
+          python "$temporary/executor.py" --describe
+          ./build/release/Thiran --plan tests/fixtures/modules/basic/main.th >"$temporary/module-plan.txt"
+          ./build/release/Thiran --emit-region-executor tests/fixtures/functions/cross_module.th "$temporary/function-executor.py"
+          git diff --exit-code -- generated.py graph.dot
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          python -m pip install -r requirements-test.txt
+      - name: Configure and build
+        run: |
+          cmake --preset sanitizers -DTHIRAN_PYTHON_EXECUTABLE="$(command -v python)"
+          cmake --build --preset sanitizers
+      - name: Test
+        run: |
+          ctest --preset sanitizers --output-on-failure
+          for test in region_ir_tests region_formation_tests strategy_classification_tests region_plan_tests region_plan_cli_support_tests region_python_emitter_tests region_python_runtime_tests installation_support_tests source_manager_tests module_linker_tests function_semantic_tests function_lowering_tests; do ./build/sanitizers/"$test"; done
+          ./build/sanitizers/Thiran --emit-region-executor examples/cnn.th /tmp/cnn-executor.py
+          ./build/sanitizers/Thiran --plan tests/fixtures/modules/basic/main.th >/tmp/module-plan.txt
+          ./build/sanitizers/Thiran --plan tests/fixtures/functions/cross_module.th >/tmp/function-plan.txt
+          echo "Sanitizer function plan smoke passed"
+          ./build/sanitizers/Thiran --emit-region-executor tests/fixtures/functions/cross_module.th /tmp/function-executor.py
+          echo "Sanitizer function executor emission passed"
+          temporary="$(mktemp -d)"
+          trap 'rm -rf "$temporary"' EXIT
+          (cd "$temporary" && "$GITHUB_WORKSPACE/build/sanitizers/Thiran" "$GITHUB_WORKSPACE/examples/cnn.th")

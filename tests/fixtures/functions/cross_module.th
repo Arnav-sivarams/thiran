@@ -1,0 +1,7 @@
+import "layers.th" as layers
+
+X = Input(2, 2)
+W = Constant(1, 2, 2)
+B = Constant(1, 2, 2)
+Y = layers.linear_relu(X, W, B)
+O = Output(Y)

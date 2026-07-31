@@ -1,0 +1,9 @@
+fn relu_twice(x) {
+    first = ReLU(x)
+    second = Sigmoid(first)
+    return second
+}
+
+X = Input(2, 2)
+Y = relu_twice(X)
+O = Output(Y)

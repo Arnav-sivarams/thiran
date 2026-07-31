@@ -1,0 +1,8 @@
+Image = Input(1, 1, 8, 8)
+Filter = Input(2, 1, 3, 3)
+Conv = Conv2D(Image, Filter)
+Pool = MaxPool(Conv)
+Flat = Reshape(Pool, 1, 18)
+Classifier = Input(18, 4)
+Logits = MatMul(Flat, Classifier)
+O = Output(Logits)

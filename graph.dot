@@ -1,0 +1,19 @@
+digraph ThiranGraph {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontname=Helvetica];
+  n0 [label="Image\nInput"];
+  n1 [label="Filter\nInput"];
+  n2 [label="Conv\nConv2D"];
+  n3 [label="Pool\nMaxPool"];
+  n4 [label="Flat\nReshape"];
+  n5 [label="Classifier\nInput"];
+  n6 [label="Logits\nMatMul"];
+  n7 [label="O\nOutput"];
+  n0 -> n2;
+  n1 -> n2;
+  n2 -> n3;
+  n3 -> n4;
+  n4 -> n6;
+  n5 -> n6;
+  n6 -> n7;
+}

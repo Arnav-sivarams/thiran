@@ -1,0 +1,2 @@
+# PyTorch provides the generated execution runtime and weights_only loading API.
+torch>=2.0

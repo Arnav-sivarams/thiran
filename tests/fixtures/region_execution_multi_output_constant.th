@@ -1,0 +1,6 @@
+X = Input(2, 2)
+C = Constant(2, 2, 2)
+Y = Add(X, C)
+O1 = Output(Y)
+Z = Multiply(Y, C)
+O2 = Output(Z)
