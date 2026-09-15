@@ -33,12 +33,20 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
 set(CORE_SOURCES ${SOURCES})
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/main\\.cpp$")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/frontend/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/semantic/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
     src/frontend/v0/Lexer.cpp
     src/frontend/v0/Ast.cpp
     src/frontend/v0/Parser.cpp)
+
+add_library(thiran_v0_semantic STATIC
+    src/semantic/v0/Ir.cpp
+    src/semantic/v0/Analyzer.cpp
+    src/semantic/v0/Verifier.cpp
+    src/semantic/v0/Evaluator.cpp)
+target_link_libraries(thiran_v0_semantic PUBLIC thiran_v0_frontend)
 
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
@@ -58,6 +66,10 @@ if(BUILD_TESTING)
     add_executable(v0_frontend_tests tests/frontend/v0/FrontendTests.cpp)
     target_link_libraries(v0_frontend_tests PRIVATE thiran_v0_frontend)
     add_test(NAME V0FrontendTests COMMAND v0_frontend_tests)
+
+    add_executable(v0_semantic_tests tests/semantic/v0/SemanticTests.cpp)
+    target_link_libraries(v0_semantic_tests PRIVATE thiran_v0_semantic)
+    add_test(NAME V0SemanticTests COMMAND v0_semantic_tests)
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
