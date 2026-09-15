@@ -1,0 +1,34 @@
+{
+  "schema": "thiran-benchmark-manifest-1",
+  "claims": [
+    {
+      "benchmark_id": "EXAMPLE-UNMEASURED-001",
+      "git_revision": null,
+      "compiler_version_build": null,
+      "workload": null,
+      "model_weight_identity": null,
+      "quality_correctness_condition": null,
+      "cpu_gpu_model": null,
+      "driver_runtime": null,
+      "precision_numeric_profile": null,
+      "batch": null,
+      "shapes": null,
+      "context_state_size": null,
+      "warm_cold_status": null,
+      "aot_jit_state": null,
+      "cache_state": null,
+      "memory_allocation_policy": null,
+      "host_device_transfer_boundary": null,
+      "synchronization_point": null,
+      "warmup_count": null,
+      "measured_iteration_count": null,
+      "raw_samples": null,
+      "median": null,
+      "p95": null,
+      "p99": null,
+      "peak_memory": null,
+      "failure_count": null,
+      "category": "KERNEL"
+    }
+  ]
+}

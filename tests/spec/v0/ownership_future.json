@@ -1,0 +1,13 @@
+{
+  "schema": "thiran-future-source-fixtures-1",
+  "edition": "v0-design",
+  "status": ["SPEC_DEFINED", "COMPILER_NOT_IMPLEMENTED"],
+  "executable": false,
+  "cases": [
+    {"id":"OWN-A","source":"let A = ...; let B = A; use(A); use(B)","expected":"valid; A remains usable; no semantic deep copy required","reference":"SEMANTICS_V0 Bindings; TH-LD-010"},
+    {"id":"OWN-B","source":"let mut A = ...; let B = A; mutate(A); use(B)","expected":"reject conflicting mutation while B remains live","reference":"SEMANTICS_V0 Bindings; TH-LD-010/011"},
+    {"id":"OWN-C","source":"let A = ...; let B = move(A); use(A)","expected":"reject use after explicit move","reference":"SEMANTICS_V0 Bindings; TH-LD-010"},
+    {"id":"OWN-D","source":"let A = ...; let B = copy(A)","expected":"B has independent storage semantics","reference":"SEMANTICS_V0 Bindings; TH-LD-009/010"},
+    {"id":"OWN-E","source":"let row = A[0, :]; destroy_or_move_source_incompatibly(A); use(row)","expected":"reject invalid borrowed-view lifetime","reference":"SEMANTICS_V0 Slicing/Bindings; TH-LD-009/011"}
+  ]
+}
