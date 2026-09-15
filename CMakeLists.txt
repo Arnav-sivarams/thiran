@@ -32,6 +32,13 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
 
 set(CORE_SOURCES ${SOURCES})
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/main\\.cpp$")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/frontend/v0/")
+
+add_library(thiran_v0_frontend STATIC
+    src/frontend/v0/Diagnostic.cpp
+    src/frontend/v0/Lexer.cpp
+    src/frontend/v0/Ast.cpp
+    src/frontend/v0/Parser.cpp)
 
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
@@ -45,8 +52,14 @@ add_custom_target(uninstall
 )
 
 include(CTest)
+option(THIRAN_V0_ONLY_TESTING "Configure only the independent V0 frontend tests" OFF)
 
 if(BUILD_TESTING)
+    add_executable(v0_frontend_tests tests/frontend/v0/FrontendTests.cpp)
+    target_link_libraries(v0_frontend_tests PRIVATE thiran_v0_frontend)
+    add_test(NAME V0FrontendTests COMMAND v0_frontend_tests)
+
+if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
     target_link_libraries(rewrite_regression_tests PRIVATE thiran_core)
     add_test(NAME RewriteRegressionTests COMMAND rewrite_regression_tests)
@@ -262,4 +275,5 @@ if(BUILD_TESTING)
         -DTEST_BINARY_DIR=${CMAKE_BINARY_DIR}/function-integration-tests
         -DPYTHON_EXECUTABLE=${THIRAN_TEST_PYTHON}
         -P ${CMAKE_SOURCE_DIR}/tests/integration/FunctionIntegrationTests.cmake)
+endif()
 endif()
