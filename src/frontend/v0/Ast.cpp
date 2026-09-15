@@ -91,6 +91,7 @@ void type(std::ostringstream& out, const TypeSyntax& t) {
         }
     }
 }
+void stmts(std::ostringstream& out, const std::vector<StmtPtr>& body);
 void stmt(std::ostringstream& out, const Statement& s) {
     std::visit([&](const auto& n) {
         using T = std::decay_t<decltype(n)>;
@@ -99,10 +100,24 @@ void stmt(std::ostringstream& out, const Statement& s) {
             expr(out, *n.value); out << ')';
         } else if constexpr (std::is_same_v<T, RebindStmt>) {
             out << "rebind(" << n.name << ','; expr(out, *n.value); out << ')';
-        } else {
+        } else if constexpr (std::is_same_v<T, ReturnStmt>) {
             out << "return("; expr(out, *n.value); out << ')';
-        }
-    }, s);
+        } else if constexpr (std::is_same_v<T, IfStmt>) {
+            out << "if("; expr(out,*n.condition); out << ",then("; stmts(out,n.thenBody);
+            out << ')'; if (n.hasElse) { out << ",else("; stmts(out,n.elseBody); out << ')'; } out << ')';
+        } else if constexpr (std::is_same_v<T, ForStmt>) {
+            out << "for(" << n.variable << ',';
+            if (n.iterable) { out << "iterable("; expr(out,*n.iterable); out << ')'; }
+            else { out << "range("; expr(out,*n.start); out << ','; expr(out,*n.end); out << ')'; }
+            out << ",body("; stmts(out,n.body); out << "))";
+        } else if constexpr (std::is_same_v<T, WhileStmt>) {
+            out << "while("; expr(out,*n.condition); out << ",body("; stmts(out,n.body); out << "))";
+        } else if constexpr (std::is_same_v<T, BreakStmt>) out << "break";
+        else if constexpr (std::is_same_v<T, ContinueStmt>) out << "continue";
+    }, s.node);
+}
+void stmts(std::ostringstream& out, const std::vector<StmtPtr>& body) {
+    for (std::size_t j=0;j<body.size();++j) { if (j) out << ','; stmt(out,*body[j]); }
 }
 }
 std::string dump(const Module& module) {
@@ -126,10 +141,7 @@ std::string dump(const Module& module) {
                 out << "),result(";
                 if (n.resultType) type(out, *n.resultType); else out << '_';
                 out << "),body(";
-                for (std::size_t j = 0; j < n.body.size(); ++j) {
-                    if (j) out << ',';
-                    stmt(out, n.body[j]);
-                }
+                stmts(out,n.body);
                 out << "))";
             }
         }, module.items[i]);

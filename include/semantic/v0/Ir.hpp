@@ -3,6 +3,7 @@
 #include "frontend/v0/Ast.hpp"
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -11,6 +12,8 @@
 namespace thiran::v0::semantic {
 using ValueId = std::uint32_t;
 using FunctionId = std::uint32_t;
+using BindingId = std::uint32_t;
+using BlockId = std::uint32_t;
 enum class TypeKind { Bool, U8, I32, I64, U32, U64, F32, F64, Tensor, Buffer, Tuple, Invalid };
 struct Type {
     TypeKind kind = TypeKind::Invalid;
@@ -25,7 +28,7 @@ bool validType(const Type&);
 bool executableType(const Type&);
 struct ShapeFact { std::vector<std::optional<std::int64_t>> extents; bool operator==(const ShapeFact&) const = default; };
 enum class EffectClass { Pure, CheckedFailure, Mutation, Rng, Io, Transfer, Async };
-enum class Op { Integer, Boolean, TensorLiteral, Tuple, Negate, Add, Subtract, Multiply,
+enum class Op { Integer, Boolean, LoadBinding, TensorLiteral, Tuple, Negate, Add, Subtract, Multiply,
                 ElementMultiply, Matmul, Index, Slice, Transpose, Sum, Call };
 enum class CheckKind { Bounds, Broadcast, MatmulShape, Slice };
 struct Selector {
@@ -43,6 +46,7 @@ struct Instruction {
     std::optional<std::int64_t> integer;
     std::optional<bool> boolean;
     FunctionId callee = 0;
+    BindingId binding = 0;
     std::uint32_t axis = 0;
     bool borrowedView = false;
     EffectClass effect = EffectClass::Pure;
@@ -56,11 +60,25 @@ struct Check {
     std::uint32_t axis = 0;
     EffectClass effect = EffectClass::CheckedFailure;
 };
-using Step = std::variant<Instruction, Check>;
+struct Block;
+struct BindingWrite { BindingId binding = 0; ValueId value = 0; bool declaration = false; SourceSpan span; };
+struct Flow { enum class Kind { Return, Break, Continue }; Kind kind = Kind::Return; std::optional<ValueId> value; SourceSpan span; };
+struct Structured {
+    enum class Kind { If, ForRange, While }; Kind kind = Kind::If;
+    SourceSpan span;
+    ValueId condition = 0, start = 0, end = 0;
+    BindingId induction = 0;
+    std::shared_ptr<Block> thenBlock, elseBlock, conditionBlock, bodyBlock;
+    std::optional<ValueId> conditionResult;
+};
+using Step = std::variant<Instruction, Check, BindingWrite, Flow, Structured>;
 struct ParameterValue { ValueId id = 0; std::string name; Type type; ShapeFact shape; SourceSpan span;
+    BindingId binding = 0;
     enum class Access { ReadOnly, ExclusiveMutable, Consuming } access = Access::ReadOnly; };
-struct Binding { std::string name; ValueId value = 0; bool mutableBinding = false; SourceSpan span; };
+struct Binding { std::string name; ValueId value = 0; bool mutableBinding = false; SourceSpan span;
+    BindingId id = 0; Type type; ShapeFact shape; };
 struct Block {
+    BlockId id = 0, parent = 0;
     std::vector<Step> steps;
     std::vector<Binding> bindings;
     std::optional<ValueId> returned;

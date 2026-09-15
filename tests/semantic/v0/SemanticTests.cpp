@@ -48,11 +48,13 @@ RuntimeValue matrix(std::vector<std::int64_t> shape,std::vector<std::int64_t> va
     return RuntimeValue{RuntimeTensor{TypeKind::I64,std::move(shape),std::move(values)}};
 }
 Instruction integerInstruction(ValueId id,std::int64_t value) {
-    Instruction i; i.id=id; i.op=Op::Integer; i.type=scalar(TypeKind::I64); i.integer=value; return i;
+    Instruction i; i.id=id; i.op=Op::Integer; i.type=scalar(TypeKind::I64); i.integer=value;
+    i.span={{0,0,1,1},{0,0,1,1}}; return i;
 }
 SemanticModule malformedBase() {
-    SemanticModule m; m.source="manual"; m.initializer.terminated=true;
+    SemanticModule m; m.source="manual"; m.initializer.id=1; m.initializer.terminated=true;
     Function f; f.id=1; f.name="manual"; f.result=scalar(TypeKind::I64);
+    f.body.id=1;
     f.body.steps.push_back(integerInstruction(1,7)); f.body.returned=1; f.body.terminated=true;
     m.functions.push_back(std::move(f)); return m;
 }
@@ -72,6 +74,102 @@ void verifierTests() {
     malformed("VIR08",[](SemanticModule& m){ m.functions[0].result=scalar(TypeKind::Bool); });
     malformed("VIR09",[](SemanticModule& m){ m.functions[0].body.terminated=false; });
     malformed("VIR10",[](SemanticModule& m){ Check c; c.kind=CheckKind::Bounds; c.operands={1,1}; c.failureId="TH-SPEC-BOUNDS"; m.functions[0].body.steps.insert(m.functions[0].body.steps.begin(),c); });
+}
+SemanticModule controlManual() {
+    auto m=malformedBase(); auto& b=m.functions[0].body; b.id=1;
+    Instruction condition; condition.id=2; condition.op=Op::Boolean; condition.boolean=true; condition.type=scalar(TypeKind::Bool);
+    condition.span={{0,0,1,1},{0,0,1,1}};
+    b.steps.push_back(condition);
+    Structured s; s.kind=Structured::Kind::If; s.condition=2; s.span={{0,0,1,1},{0,0,1,1}};
+    s.thenBlock=std::make_shared<Block>(); s.thenBlock->id=2; s.thenBlock->parent=1; s.thenBlock->terminated=true;
+    s.elseBlock=std::make_shared<Block>(); s.elseBlock->id=3; s.elseBlock->parent=1; s.elseBlock->terminated=true;
+    b.steps.push_back(s); return m;
+}
+void controlVerifierTests() {
+    require(verify(controlManual()).ok,"manual structured verifier base invalid");
+    auto bad=[](const std::string& id,const std::function<void(SemanticModule&)>& change) {
+        auto m=controlManual(); change(m); require(!verify(m).ok,id+": malformed structured IR accepted");
+    };
+    bad("CFV01",[](SemanticModule& m){ std::get<Structured>(m.functions[0].body.steps[2]).condition=1; });
+    bad("CFV02",[](SemanticModule& m){ m.functions[0].body.steps.push_back(Flow{Flow::Kind::Break,{},{}}); });
+    bad("CFV03",[](SemanticModule& m){ m.functions[0].body.steps.push_back(Flow{Flow::Kind::Continue,{},{}}); });
+    bad("CFV04",[](SemanticModule& m){ auto& s=std::get<Structured>(m.functions[0].body.steps[2]); s.thenBlock->steps.push_back(integerInstruction(3,8)); Instruction i; i.id=4; i.op=Op::Add; i.type=scalar(TypeKind::I64); i.operands={1,3}; m.functions[0].body.steps.push_back(i); });
+    bad("CFV05",[](SemanticModule& m){ auto& s=std::get<Structured>(m.functions[0].body.steps[2]); s.thenBlock->steps.push_back(BindingWrite{1,1,true,{}}); });
+    bad("CFV06",[](SemanticModule& m){ Structured s; s.kind=Structured::Kind::ForRange; s.start=1; s.end=1; s.induction=1; s.bodyBlock=std::make_shared<Block>(); s.bodyBlock->id=4; s.bodyBlock->parent=1; s.bodyBlock->terminated=true; s.bodyBlock->steps.push_back(BindingWrite{77,1,false,{}}); m.functions[0].body.steps.push_back(s); });
+    bad("CFV07",[](SemanticModule& m){ auto& s=std::get<Structured>(m.functions[0].body.steps[2]); s.thenBlock->steps.push_back(Flow{Flow::Kind::Return,2,{}}); });
+    bad("CFV08",[](SemanticModule& m){ auto& s=std::get<Structured>(m.functions[0].body.steps[2]); Check c; c.kind=CheckKind::Bounds; c.operands={1,1}; c.failureId="TH-SPEC-BOUNDS"; s.thenBlock->steps.push_back(c); });
+    bad("CFV09",[](SemanticModule& m){ Structured s; s.kind=Structured::Kind::ForRange; s.start=1; s.end=1; s.induction=1; m.functions[0].body.steps.push_back(s); });
+    bad("CFV10",[](SemanticModule& m){ auto& s=std::get<Structured>(m.functions[0].body.steps[2]); s.elseBlock->id=2; });
+}
+void scalarCall(const std::string& id,const std::string& source,const std::string& name,
+                std::vector<RuntimeValue> args,std::int64_t expected) {
+    auto m=valid(id,source); auto result=evaluateCall(m,name,args);
+    require(result.format()=="{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":"+std::to_string(expected)+"}",
+        id+": scalar observation mismatch "+result.format());
+}
+void controlFlowTests() {
+    const std::string choose="fn choose(flag:bool)->i64{let mut x=0; if flag { x=10 } else { x=20 }; return x}";
+    scalarCall("CF01-T",choose,"choose",{RuntimeValue{true}},10);
+    scalarCall("CF01-F",choose,"choose",{RuntimeValue{false}},20);
+    const std::string partial="fn partial(flag:bool)->i64{let mut x=0; if flag { x=10 }; return x}";
+    scalarCall("CF02-T",partial,"partial",{RuntimeValue{true}},10);
+    scalarCall("CF02-F",partial,"partial",{RuntimeValue{false}},0);
+    staticError("CF03","fn f(flag:bool)->i64{if flag { let x=1 }; return x}","TH005-UNDEFINED-NAME");
+    scalarCall("CF04-T",choose,"choose",{RuntimeValue{true}},10);
+    scalarCall("CF04-F",choose,"choose",{RuntimeValue{false}},20);
+    const std::string nested="fn nested(a:bool,b:bool)->i64{if a { if b { return 1 } else { return 2 } } else { return 3 }}";
+    scalarCall("CF05-A",nested,"nested",{RuntimeValue{true},RuntimeValue{true}},1);
+    scalarCall("CF05-B",nested,"nested",{RuntimeValue{true},RuntimeValue{false}},2);
+    scalarCall("CF05-C",nested,"nested",{RuntimeValue{false},RuntimeValue{true}},3);
+    const std::string sum="fn sum_to(n:i64)->i64{let mut total=0; for i in 0:n { total=total+i }; return total}";
+    scalarCall("CF06",sum,"sum_to",{RuntimeValue{std::int64_t{5}}},10);
+    scalarCall("CF07",sum,"sum_to",{RuntimeValue{std::int64_t{0}}},0);
+    scalarCall("CF08",sum,"sum_to",{RuntimeValue{std::int64_t{4}}},6);
+    scalarCall("CF-R",sum,"sum_to",{RuntimeValue{std::int64_t{-5}}},0);
+    const std::string once="fn once(flag:bool)->i64{let mut running=flag; let mut value=0; while running { value=7; running=false }; return value}";
+    scalarCall("CF09-T",once,"once",{RuntimeValue{true}},7);
+    scalarCall("CF09-F",once,"once",{RuntimeValue{false}},0);
+    scalarCall("CF10","fn f(n:i64)->i64{let mut x=0; for i in 0:n { x=x+1; break }; return x}","f",{RuntimeValue{std::int64_t{5}}},1);
+    scalarCall("CF11","fn f(n:i64)->i64{let mut x=0; for i in 0:n { if true { continue }; x=x+1 }; return x}","f",{RuntimeValue{std::int64_t{5}}},0);
+    scalarCall("CF12","fn f(n:i64)->i64{let mut x=0; for i in 0:n { for j in 0:3 { break }; x=x+1 }; return x}","f",{RuntimeValue{std::int64_t{4}}},4);
+    scalarCall("CF13-T","fn f(flag:bool)->i64{if flag { return 1 }; return 2}","f",{RuntimeValue{true}},1);
+    scalarCall("CF13-F","fn f(flag:bool)->i64{if flag { return 1 }; return 2}","f",{RuntimeValue{false}},2);
+    scalarCall("CF14","fn f(n:i64)->i64{for i in 0:n { return i }; return 99}","f",{RuntimeValue{std::int64_t{5}}},0);
+    const std::string guarded="fn safe(flag:bool,x:Tensor<i64,2>)->i64{if flag { return x[999,0] }; return 0}";
+    auto safe=valid("CF15",guarded);
+    require(dump(safe).find("if %")<dump(safe).find("check bounds"),"CF15 Check escaped branch region");
+    require(evaluateCall(safe,"safe",{RuntimeValue{false},matrix({1,1},{7})}).format()==
+        "{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":0}","CF15 untaken Check trapped");
+    require(evaluateCall(safe,"safe",{RuntimeValue{true},matrix({1,1},{7})}).errorId=="TH-SPEC-BOUNDS","CF16 taken Check did not trap");
+    const std::string tensor="fn f(flag:bool,A:Tensor<i64,2>)->Tensor<i64,2>{if flag { return A+A } else { return A*A }}";
+    auto tm=valid("CF17",tensor);
+    require(evaluateCall(tm,"f",{RuntimeValue{true},matrix({2,2},{1,2,3,4})}).format()==
+        "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"i64\",\"shape\":[2,2],\"values\":[2,4,6,8]}","CF17 then tensor wrong");
+    require(evaluateCall(tm,"f",{RuntimeValue{false},matrix({2,2},{1,2,3,4})}).format()==
+        "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"i64\",\"shape\":[2,2],\"values\":[7,10,15,22]}","CF17 else tensor wrong");
+    scalarCall("CF18","fn f(A:Tensor<i64,1>,n:i64)->i64{let mut x=0; for i in 0:n { x=x+A[i] }; return x}","f",
+        {matrix({3},{2,3,4}),RuntimeValue{std::int64_t{3}}},9);
+    auto loopOverflow=valid("CF18-OVERFLOW","fn f(A:Tensor<i64,1>)->i64{let mut x=0; for i in 0:2 { x=x+A[i] }; return x}");
+    require(evaluateCall(loopOverflow,"f",{matrix({2},{std::numeric_limits<std::int64_t>::max(),1})}).errorId=="TH-SPEC-I64-OVERFLOW",
+        "loop-carried accumulation lost checked i64 overflow");
+    auto det=valid("CF19",sum); require(dump(det)==dump(valid("CF19-repeat",sum)),"CF19 structured dump differs");
+    staticError("CF-D01","fn f(x:i64)->i64{if x { return 1 }; return 0}","TH005C-CONDITION-TYPE");
+    staticError("CF-D02","fn f(x:i64)->i64{while x { break }; return 0}","TH005C-CONDITION-TYPE");
+    staticError("CF-D03","fn f(x:bool)->i64{for i in x:4 { break }; return 0}","TH005C-RANGE-TYPE");
+    staticError("CF-D04","fn f(x:bool)->i64{for i in 0:x { break }; return 0}","TH005C-RANGE-TYPE");
+    staticError("CF-D05","fn f()->i64{break; return 0}","TH005C-LOOP-CONTROL");
+    staticError("CF-D06","fn f()->i64{continue; return 0}","TH005C-LOOP-CONTROL");
+    staticError("CF-D07","fn f()->i64{if true { let x=1; let x=2 }; return 0}","TH005-DUPLICATE-BINDING");
+    staticError("CF-D08","fn f()->i64{let x=0; if true { x=1 }; return x}","TH005-IMMUTABLE-REBIND");
+    staticError("CF-D09","fn f()->i64{let mut x=0; for i in 0:1 { x=true }; return x}","TH005-REBIND-TYPE");
+    staticError("CF-D10","fn f()->i64{if true { let x=y }; return 0}","TH005-UNDEFINED-NAME");
+    staticError("CF-D11","fn f(A:Tensor<i64,2>)->i64{for row in A { break }; return 0}","TH005C-ITERABLE-FOR-DEFERRED");
+    staticError("CF-D12","fn f()->i64{for i in 0:2 { break; let x=1 }; return 0}","TH005-AFTER-RETURN");
+    staticError("CF-D13","fn f()->i64{return 1; return 2}","TH005-AFTER-RETURN");
+    scalarCall("CF-SHADOW","fn f(flag:bool)->i64{let x=1; if flag { let x=2; return x }; return x}","f",{RuntimeValue{false}},1);
+    scalarCall("CF-ALIAS","fn f(flag:bool)->i64{let mut x=1; let y=x; if flag { x=2 }; return y}","f",{RuntimeValue{true}},1);
+    auto infinite=valid("CF-LIMIT","fn f()->i64{while true { }; return 0}");
+    require(evaluateCall(infinite,"f",{}).errorId=="TH005C-STEP-LIMIT","infinite while did not stop at evaluator guard");
 }
 void sourceTests() {
     value("S01","let x = 4 + 5","x","{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":9}");
@@ -190,7 +288,7 @@ void adversarialTests() {
 }
 }
 int main() {
-    try { verifierTests(); sourceTests(); diagnosticTests(); adversarialTests();
+    try { verifierTests(); controlVerifierTests(); sourceTests(); controlFlowTests(); diagnosticTests(); adversarialTests();
         std::cout << "PASS V0 semantic source, verifier, evaluator and adversarial matrix\n"; return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL V0 semantic: " << error.what() << '\n'; return 1; }
 }

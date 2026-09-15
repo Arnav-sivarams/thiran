@@ -54,7 +54,23 @@ void typeSpans(const TypeSyntax& t) {
     for (const auto& child : t.elements) typeSpans(child);
 }
 void statementSpans(const Statement& s) {
-    std::visit([&](const auto& n) { span(n.span); expressionSpans(*n.value); }, s);
+    std::visit([&](const auto& n) {
+        using T=std::decay_t<decltype(n)>;
+        span(n.span);
+        if constexpr (std::is_same_v<T,LetStmt> || std::is_same_v<T,RebindStmt> || std::is_same_v<T,ReturnStmt>) expressionSpans(*n.value);
+        else if constexpr (std::is_same_v<T,IfStmt>) {
+            expressionSpans(*n.condition);
+            for (const auto& s:n.thenBody) statementSpans(*s);
+            for (const auto& s:n.elseBody) statementSpans(*s);
+        } else if constexpr (std::is_same_v<T,ForStmt>) {
+            if (n.start) expressionSpans(*n.start);
+            if (n.end) expressionSpans(*n.end);
+            if (n.iterable) expressionSpans(*n.iterable);
+            for (const auto& s:n.body) statementSpans(*s);
+        } else if constexpr (std::is_same_v<T,WhileStmt>) {
+            expressionSpans(*n.condition); for (const auto& s:n.body) statementSpans(*s);
+        }
+    }, s.node);
 }
 void moduleSpans(const Module& m) {
     span(m.span);
@@ -65,7 +81,7 @@ void moduleSpans(const Module& m) {
         else if constexpr (std::is_same_v<T, FunctionDecl>) {
             for (const auto& p : n.parameters) { span(p.span); typeSpans(p.type); }
             if (n.resultType) typeSpans(*n.resultType);
-            for (const auto& stmt : n.body) statementSpans(stmt);
+            for (const auto& stmt : n.body) statementSpans(*stmt);
         }
     }, item);
 }
@@ -149,6 +165,14 @@ void validTests() {
           "left associativity wrong");
     check(valid("SEMI", "let A = [1, 2; 3, 4]; let x = A[0]").find("tensor([int(1),int(2)];[int(3),int(4)])") != std::string::npos,
           "semicolon context wrong");
+    check(valid("CFP01","fn f()->i64{if true { return 1 } else { return 2 }}").find("if(bool(true),then(return(int(1))),else(return(int(2))))")!=std::string::npos,"if/else AST wrong");
+    check(valid("CFP02","fn f()->i64{if true { if false { return 1 } }; return 2}").find("if(bool(false)")!=std::string::npos,"nested if AST wrong");
+    check(valid("CFP03","fn f(n:i64)->i64{let mut x=0; for i in 0:n { x=x+i }; return x}").find("for(i,range(int(0),id(n))")!=std::string::npos,"range AST wrong");
+    check(valid("CFP04","fn f(flag:bool)->i64{while flag { break }; return 0}").find("while(id(flag),body(break))")!=std::string::npos,"while/break AST wrong");
+    check(valid("CFP05","fn f(n:i64)->i64{for i in 0:n { continue }; return 0}").find("continue")!=std::string::npos,"continue AST wrong");
+    check(valid("CFP06","fn f(A:Tensor<i64,2>)->i64{for row in A { break }; return 0}").find("iterable(id(A))")!=std::string::npos,"iterable-for AST wrong");
+    check(valid("COLON-CONTEXT","fn f(x:i64,A:Tensor<i64,1>)->i64{for i in 0:x { let y=A[0:4] }; return x}").find("slice(int(0),int(4),_)")!=std::string::npos,"colon context ambiguous");
+    check(valid("SEMI-BLOCK","fn f()->i64{if true { let A=[1,2;3,4]; return A[0,0] }; return 0}").find("tensor([int(1),int(2)];[int(3),int(4)])")!=std::string::npos,"nested tensor/statement semicolon confused");
 }
 void invalidTests() {
     invalid("I01", "let A = [1, 2; 3]", "ragged");
@@ -163,7 +187,14 @@ void invalidTests() {
     invalid("I10", "let A = [1, 2;; 3, 4]", "missing row");
     invalid("STRING", "import \"broken", "unterminated string");
     invalid("POSTFIX", "let x = A.", "member name");
-    invalid("CONTROL", "if true { }", "unexpected token");
+    invalid("CONTROL", "else { }", "unexpected token");
+    invalid("CFP-I01","fn f()->i64{if { return 1 }}","expected expression");
+    invalid("CFP-I02","fn f()->i64{else { return 1 }}","unexpected token");
+    invalid("CFP-I03","fn f()->i64{for in 0:1 { break }}","loop variable");
+    invalid("CFP-I04","fn f()->i64{for i in { break }}","expected expression");
+    invalid("CFP-I05","fn f()->i64{for i in 0: { break }}","expected expression");
+    invalid("CFP-I06","fn f()->i64{while { break }}","expected expression");
+    invalid("CFP-I07","fn f()->i64{if true { return 1","missing '}' delimiter");
 }
 void robustnessTests() {
     const std::vector<std::string> inputs = {

@@ -194,24 +194,34 @@ public:
         const auto& f=module_.functions.at(id-1);
         if (args.size()!=f.parameters.size()) fail("TH005-RUNTIME-ARITY");
         std::map<ValueId,RuntimeValue> values;
+        std::map<BindingId,RuntimeValue> bindings;
         for (std::size_t i=0;i<args.size();++i) {
             if (!runtimeType(args[i],f.parameters[i].type)) fail("TH005-RUNTIME-TYPE");
             values[f.parameters[i].id]=args[i];
+            bindings[f.parameters[i].binding]=args[i];
         }
-        execute(f.body,values);
-        auto result=values.at(*f.body.returned);
+        auto signal=execute(f.body,values,bindings);
+        if (signal.kind!=Signal::Kind::Return || !signal.value) fail("TH005-INVALID-IR");
+        auto result=*signal.value;
         --depth_; return result;
     }
-    std::map<ValueId,RuntimeValue> initializer() {
+    std::map<BindingId,RuntimeValue> initializer() {
         std::map<ValueId,RuntimeValue> values;
-        execute(module_.initializer,values);
-        return values;
+        std::map<BindingId,RuntimeValue> bindings;
+        execute(module_.initializer,values,bindings);
+        return bindings;
     }
 private:
     const Module& module_;
     std::uint32_t depth_=0;
     std::uint64_t steps_=0;
-    void execute(const Block& block,std::map<ValueId,RuntimeValue>& values) {
+    std::uint64_t iterations_=0;
+    struct Signal {
+        enum class Kind { Normal, Return, Break, Continue }; Kind kind=Kind::Normal;
+        std::optional<RuntimeValue> value;
+    };
+    void guardIteration() { if (++iterations_>100000) fail("TH005C-STEP-LIMIT"); }
+    Signal execute(const Block& block,std::map<ValueId,RuntimeValue>& values,std::map<BindingId,RuntimeValue>& bindings) {
         for (const auto& step:block.steps) {
             if (++steps_>1000000) fail("TH005-RESOURCE-LIMIT");
             if (auto* c=std::get_if<Check>(&step)) {
@@ -232,12 +242,50 @@ private:
                 }
                 continue;
             }
+            if (auto* write=std::get_if<BindingWrite>(&step)) {
+                bindings[write->binding]=values.at(write->value); continue;
+            }
+            if (auto* flow=std::get_if<Flow>(&step)) {
+                if (flow->kind==Flow::Kind::Return) return {Signal::Kind::Return,values.at(*flow->value)};
+                return {flow->kind==Flow::Kind::Break?Signal::Kind::Break:Signal::Kind::Continue,{}};
+            }
+            if (auto* s=std::get_if<Structured>(&step)) {
+                if (s->kind==Structured::Kind::If) {
+                    auto condition=std::get<bool>(values.at(s->condition).data);
+                    auto chosen=condition?s->thenBlock:s->elseBlock;
+                    if (chosen) { auto signal=execute(*chosen,values,bindings); if (signal.kind!=Signal::Kind::Normal) return signal; }
+                } else if (s->kind==Structured::Kind::ForRange) {
+                    auto start=integerValue(values.at(s->start)),end=integerValue(values.at(s->end));
+                    // Checked signed induction: never increment after the final iteration.
+                    for (auto i=start;i<end;) {
+                        guardIteration(); bindings[s->induction]=RuntimeValue{i};
+                        auto signal=execute(*s->bodyBlock,values,bindings);
+                        if (signal.kind==Signal::Kind::Return) return signal;
+                        if (signal.kind==Signal::Kind::Break) break;
+                        if (i==std::numeric_limits<std::int64_t>::max()) break;
+                        ++i;
+                    }
+                    bindings.erase(s->induction);
+                } else {
+                    while (true) {
+                        guardIteration();
+                        auto conditionSignal=execute(*s->conditionBlock,values,bindings);
+                        if (conditionSignal.kind!=Signal::Kind::Normal) fail("TH005-INVALID-IR");
+                        if (!std::get<bool>(values.at(*s->conditionResult).data)) break;
+                        auto signal=execute(*s->bodyBlock,values,bindings);
+                        if (signal.kind==Signal::Kind::Return) return signal;
+                        if (signal.kind==Signal::Kind::Break) break;
+                    }
+                }
+                continue;
+            }
             const auto& i=std::get<Instruction>(step);
             auto operand=[&](std::size_t index)->const RuntimeValue& { return values.at(i.operands.at(index)); };
             RuntimeValue result;
             switch (i.op) {
                 case Op::Integer: result.data=*i.integer; break;
                 case Op::Boolean: result.data=*i.boolean; break;
+                case Op::LoadBinding: result=bindings.at(i.binding); break;
                 case Op::TensorLiteral: {
                     RuntimeTensor tensor{TypeKind::I64,{},{}};
                     for (auto extent:i.shape.extents) tensor.shape.push_back(*extent);
@@ -262,6 +310,7 @@ private:
             if (!runtimeType(result,i.type)) fail("TH005-RUNTIME-TYPE");
             values[i.id]=std::move(result);
         }
+        return {};
     }
 };
 Observation guarded(const Module& module,const std::function<RuntimeValue(Evaluator&)>& action) {
@@ -299,7 +348,7 @@ Observation evaluateBinding(const Module& module,const std::string& name) {
     return guarded(module,[&](Evaluator& e) {
         auto values=e.initializer();
         for (auto it=module.initializer.bindings.rbegin();it!=module.initializer.bindings.rend();++it)
-            if (it->name==name) return values.at(it->value);
+            if (it->name==name) return values.at(it->id);
         fail("TH005-UNKNOWN-BINDING");
     });
 }

@@ -16,7 +16,7 @@ namespace {
 struct Failure { SemanticDiagnostic diagnostic; };
 struct Fact { Type type; ShapeFact shape; std::optional<std::int64_t> constant; };
 struct Located { ValueId id; Fact fact; };
-struct Local { Located value; bool mutableBinding; };
+struct Local { BindingId id; Fact fact; bool mutableBinding; };
 bool isTensor(const Type& t) { return t.kind == TypeKind::Tensor; }
 bool i64(const Type& t) { return t == scalar(TypeKind::I64); }
 bool numeric(const Type& t) { return i64(t) || (isTensor(t) && t.elements.size()==1 &&
@@ -77,7 +77,9 @@ public:
             states_.push_back(0);
         }
         for (std::size_t i = 0; i < result_.functions.size(); ++i) ensure(static_cast<FunctionId>(i + 1));
-        BlockContext init{result_.initializer, {}, {}, 1, nullptr};
+        nextValue_=1; nextBinding_=1; nextBlock_=1;
+        result_.initializer.id=nextBlock_++;
+        BlockContext init{result_.initializer, {}, {}, {}, nullptr, 0};
         for (const auto& item : syntax_.items) if (auto* let = std::get_if<LetStmt>(&item)) statement(*let, init);
         result_.initializer.terminated = true;
         return std::move(result_);
@@ -87,14 +89,18 @@ private:
         Block& block;
         std::map<std::string, Local> locals;
         std::map<ValueId, Fact> facts;
-        ValueId next;
+        std::set<std::string> declared;
         Function* function;
+        std::uint32_t loopDepth;
     };
     const thiran::v0::Module& syntax_;
     Module result_;
     std::map<std::string, FunctionId> names_;
     std::vector<const FunctionDecl*> declarations_;
     std::vector<int> states_;
+    ValueId nextValue_=1;
+    BindingId nextBinding_=1;
+    BlockId nextBlock_=1;
     [[noreturn]] void fail(SourceSpan span, std::string id, std::string message) const {
         throw Failure{{syntax_.source, std::move(id), std::move(message), span}};
     }
@@ -135,26 +141,33 @@ private:
                 fail(result_.functions[index].span,"TH005-INFERENCE-CYCLE","recursive/inference cycle requires explicit result types");
             return;
         }
+        const auto savedValue=nextValue_;
+        const auto savedBinding=nextBinding_;
+        const auto savedBlock=nextBlock_;
         states_[index] = 1;
         auto& function = result_.functions[index];
-        BlockContext context{function.body, {}, {}, static_cast<ValueId>(function.parameters.size() + 1), &function};
+        nextValue_=static_cast<ValueId>(function.parameters.size()+1);
+        nextBinding_=1; nextBlock_=1; function.body.id=nextBlock_++;
+        BlockContext context{function.body, {}, {}, {}, &function, 0};
         for (const auto& p : function.parameters) {
             Fact fact{p.type,p.shape,{}};
-            context.locals[p.name] = {{p.id,fact},false};
+            auto binding=nextBinding_++;
+            const_cast<ParameterValue&>(p).binding=binding;
+            context.locals[p.name] = {binding,fact,false};
+            context.declared.insert(p.name);
             context.facts[p.id] = fact;
         }
-        for (const auto& s : declarations_[index]->body) {
-            if (function.body.terminated) fail(std::visit([](const auto& n){return n.span;},s),"TH005-AFTER-RETURN","statement after return");
-            std::visit([&](const auto& n) { statement(n, context); }, s);
-        }
-        if (!function.body.terminated) fail(function.span,"TH005-MISSING-RETURN","function requires a return expression");
+        analyzeBody(declarations_[index]->body,context);
+        if (!function.body.terminated && !alwaysReturns(function.body)) fail(function.span,"TH005-MISSING-RETURN","function requires a return expression");
+        function.body.terminated=true;
         states_[index] = 2;
+        nextValue_=savedValue; nextBinding_=savedBinding; nextBlock_=savedBlock;
     }
     Located emit(BlockContext& c, Instruction i, Fact fact) {
         if (i.op==Op::Negate || i.op==Op::Add || i.op==Op::Subtract || i.op==Op::Multiply ||
             i.op==Op::ElementMultiply || i.op==Op::Matmul || i.op==Op::Index || i.op==Op::Slice ||
             i.op==Op::Sum || i.op==Op::Call) i.effect=EffectClass::CheckedFailure;
-        i.id = c.next++;
+        i.id = nextValue_++;
         i.type = fact.type; i.shape = fact.shape;
         c.block.steps.emplace_back(i);
         c.facts[i.id] = fact;
@@ -170,7 +183,10 @@ private:
             if constexpr (std::is_same_v<N, IdentifierExpr>) {
                 auto it = c.locals.find(n.name);
                 if (it == c.locals.end()) fail(e.span,"TH005-UNDEFINED-NAME","undefined identifier " + n.name);
-                return it->second.value;
+                Instruction i; i.op=Op::LoadBinding; i.span=e.span; i.binding=it->second.id;
+                auto fact=it->second.fact;
+                if (it->second.mutableBinding) fact.constant.reset();
+                return emit(c,std::move(i),fact);
             } else if constexpr (std::is_same_v<N, IntegerLiteralExpr>) {
                 auto value = literal(n.spelling);
                 if (!value) fail(e.span,"TH005-INTEGER-RANGE","integer literal is outside exact i64 range");
@@ -354,26 +370,95 @@ private:
         return emit(c,std::move(i),{type,shape,{}});
     }
     void statement(const LetStmt& n, BlockContext& c) {
-        if (c.locals.contains(n.name)) fail(n.span,"TH005-DUPLICATE-BINDING","duplicate binding " + n.name);
+        if (c.declared.contains(n.name)) fail(n.span,"TH005-DUPLICATE-BINDING","duplicate binding " + n.name);
         auto value=expr(*n.value,c);
-        c.locals[n.name]={value,n.mutableBinding};
-        c.block.bindings.push_back({n.name,value.id,n.mutableBinding,n.span});
+        auto id=nextBinding_++;
+        c.locals[n.name]={id,value.fact,n.mutableBinding}; c.declared.insert(n.name);
+        c.block.bindings.push_back({n.name,value.id,n.mutableBinding,n.span,id,value.fact.type,value.fact.shape});
+        c.block.steps.emplace_back(BindingWrite{id,value.id,true,n.span});
     }
     void statement(const RebindStmt& n, BlockContext& c) {
         auto it=c.locals.find(n.name);
         if (it==c.locals.end()) fail(n.span,"TH005-UNDEFINED-NAME","undefined rebind target " + n.name);
         if (!it->second.mutableBinding) fail(n.span,"TH005-IMMUTABLE-REBIND","binding is immutable: " + n.name);
         auto value=expr(*n.value,c);
-        if (value.fact.type!=it->second.value.fact.type) fail(n.span,"TH005-REBIND-TYPE","rebind type disagrees with original binding");
-        it->second.value=value;
-        c.block.bindings.push_back({n.name,value.id,true,n.span});
+        if (value.fact.type!=it->second.fact.type) fail(n.span,"TH005-REBIND-TYPE","rebind type disagrees with original binding");
+        it->second.fact.constant.reset();
+        c.block.steps.emplace_back(BindingWrite{it->second.id,value.id,false,n.span});
     }
     void statement(const ReturnStmt& n, BlockContext& c) {
         auto value=expr(*n.value,c);
         if (c.function->result.kind==TypeKind::Invalid) c.function->result=value.fact.type;
         else if (value.fact.type!=c.function->result)
             fail(n.span,"TH005-RETURN-TYPE","return type " + typeName(value.fact.type) + " disagrees with " + typeName(c.function->result));
+        c.block.steps.emplace_back(Flow{Flow::Kind::Return,value.id,n.span});
         c.block.returned=value.id; c.block.terminated=true;
+    }
+    static SourceSpan stmtSpan(const Statement& s) {
+        return std::visit([](const auto& n){return n.span;},s.node);
+    }
+    bool alwaysReturns(const Block& b) const {
+        for (const auto& step:b.steps) {
+            if (auto* f=std::get_if<Flow>(&step)) return f->kind==Flow::Kind::Return;
+            if (auto* s=std::get_if<Structured>(&step); s && s->kind==Structured::Kind::If &&
+                s->thenBlock && s->elseBlock && alwaysReturns(*s->thenBlock) && alwaysReturns(*s->elseBlock)) return true;
+        }
+        return false;
+    }
+    void analyzeBody(const std::vector<StmtPtr>& statements,BlockContext& c) {
+        for (const auto& s:statements) {
+            if (c.block.terminated || alwaysReturns(c.block))
+                fail(stmtSpan(*s),"TH005-AFTER-RETURN","statement after unconditional control exit");
+            std::visit([&](const auto& n){statement(n,c);},s->node);
+        }
+    }
+    std::shared_ptr<Block> nested(const std::vector<StmtPtr>& statements,BlockContext& parent,bool loop=false) {
+        auto block=std::make_shared<Block>(); block->id=nextBlock_++; block->parent=parent.block.id;
+        BlockContext c{*block,parent.locals,parent.facts,{},parent.function,parent.loopDepth+(loop?1U:0U)};
+        analyzeBody(statements,c);
+        block->terminated=true;
+        return block;
+    }
+    void statement(const IfStmt& n,BlockContext& c) {
+        auto condition=expr(*n.condition,c);
+        if (condition.fact.type!=scalar(TypeKind::Bool)) fail(n.condition->span,"TH005C-CONDITION-TYPE","if condition must be scalar bool");
+        Structured s; s.kind=Structured::Kind::If; s.span=n.span; s.condition=condition.id;
+        s.thenBlock=nested(n.thenBody,c);
+        if (n.hasElse) s.elseBlock=nested(n.elseBody,c);
+        c.block.steps.emplace_back(std::move(s));
+    }
+    void statement(const ForStmt& n,BlockContext& c) {
+        if (n.iterable) fail(n.iterable->span,"TH005C-ITERABLE-FOR-DEFERRED","leading-axis tensor iteration awaits ownership/view semantics");
+        auto start=expr(*n.start,c),end=expr(*n.end,c);
+        if (!i64(start.fact.type)) fail(n.start->span,"TH005C-RANGE-TYPE","range start must be i64");
+        if (!i64(end.fact.type)) fail(n.end->span,"TH005C-RANGE-TYPE","range end must be i64");
+        Structured s; s.kind=Structured::Kind::ForRange; s.span=n.span; s.start=start.id; s.end=end.id;
+        auto body=std::make_shared<Block>(); body->id=nextBlock_++; body->parent=c.block.id;
+        BlockContext inner{*body,c.locals,c.facts,{},c.function,c.loopDepth+1};
+        s.induction=nextBinding_++;
+        inner.locals[n.variable]={s.induction,{scalar(TypeKind::I64),{},{}},false};
+        inner.declared.insert(n.variable);
+        body->bindings.push_back({n.variable,0,false,n.span,s.induction,scalar(TypeKind::I64),{}});
+        analyzeBody(n.body,inner); body->terminated=true; s.bodyBlock=std::move(body);
+        c.block.steps.emplace_back(std::move(s));
+    }
+    void statement(const WhileStmt& n,BlockContext& c) {
+        Structured s; s.kind=Structured::Kind::While; s.span=n.span;
+        auto condition=std::make_shared<Block>(); condition->id=nextBlock_++; condition->parent=c.block.id;
+        BlockContext inner{*condition,c.locals,c.facts,{},c.function,c.loopDepth};
+        auto value=expr(*n.condition,inner);
+        if (value.fact.type!=scalar(TypeKind::Bool)) fail(n.condition->span,"TH005C-CONDITION-TYPE","while condition must be scalar bool");
+        condition->terminated=true; s.conditionBlock=std::move(condition); s.conditionResult=value.id;
+        s.bodyBlock=nested(n.body,c,true);
+        c.block.steps.emplace_back(std::move(s));
+    }
+    void statement(const BreakStmt& n,BlockContext& c) {
+        if (!c.loopDepth) fail(n.span,"TH005C-LOOP-CONTROL","break outside loop");
+        c.block.steps.emplace_back(Flow{Flow::Kind::Break,{},n.span}); c.block.terminated=true;
+    }
+    void statement(const ContinueStmt& n,BlockContext& c) {
+        if (!c.loopDepth) fail(n.span,"TH005C-LOOP-CONTROL","continue outside loop");
+        c.block.steps.emplace_back(Flow{Flow::Kind::Continue,{},n.span}); c.block.terminated=true;
     }
 };
 }

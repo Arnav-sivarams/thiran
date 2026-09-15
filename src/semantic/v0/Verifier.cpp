@@ -1,132 +1,238 @@
 #include "semantic/v0/Verifier.hpp"
+#include <algorithm>
 #include <map>
 #include <set>
 
 namespace thiran::v0::semantic {
 namespace {
-void error(VerificationResult& r, std::string message) { r.errors.push_back(std::move(message)); }
-bool shapeValid(const Type& t, const ShapeFact& s) {
-    return s.extents.size() == (t.kind == TypeKind::Tensor ? t.rank : 0);
+void err(VerificationResult& r,const char* message) { r.errors.emplace_back(message); }
+bool shapeOk(const Type& t,const ShapeFact& s) {
+    if (s.extents.size()!=(t.kind==TypeKind::Tensor?t.rank:0)) return false;
+    for (auto x:s.extents) if (x && *x<0) return false;
+    return true;
 }
-bool sameElement(const Type& a, const Type& b) {
-    return a.kind==TypeKind::Tensor && b.kind==TypeKind::Tensor && a.elements.size()==1 && b.elements.size()==1 && a.elements[0]==b.elements[0];
+bool spanOk(const SourceSpan& s) {
+    return s.begin.source!=frontend::invalidSourceId && s.begin.source==s.end.source &&
+        s.begin.offset<=s.end.offset && s.begin.line>=1 && s.end.line>=1 &&
+        s.begin.column>=1 && s.end.column>=1;
 }
-void block(const Module& m, const Block& b, const Function* function, VerificationResult& r) {
-    std::map<ValueId,Type> available;
-    ValueId expected=1;
-    if (function) for (const auto& p : function->parameters) {
-        if (p.id!=expected++) error(r,"parameter ValueIds must be unique and monotonic");
-        if (!validType(p.type) || !shapeValid(p.type,p.shape)) error(r,"invalid parameter type/shape");
-        if (!available.emplace(p.id,p.type).second) error(r,"duplicate ValueId");
+struct Slot { Type type; bool mutableBinding; };
+struct State { ValueId value=1; BindingId binding=1; BlockId block=1; std::set<const Block*> seen; };
+using Values=std::map<ValueId,Type>;
+using Slots=std::map<BindingId,Slot>;
+bool returns(const Block& b) {
+    if (b.returned) return true;
+    for (const auto& step:b.steps) {
+        if (auto* f=std::get_if<Flow>(&step)) return f->kind==Flow::Kind::Return;
+        if (auto* s=std::get_if<Structured>(&step); s && s->kind==Structured::Kind::If &&
+            s->thenBlock && s->elseBlock && returns(*s->thenBlock) && returns(*s->elseBlock)) return true;
     }
-    auto used=[&](ValueId id) -> Type {
-        auto it=available.find(id);
-        if (it==available.end()) { error(r,"unknown or use-before-definition ValueId"); return {}; }
+    return false;
+}
+void inspect(const Module& m,const Block& b,const Function* fn,State& state,VerificationResult& r,
+             Values values,Slots slots,BlockId parent,unsigned loopDepth,bool induction=false,BindingId inductionId=0) {
+    if (!state.seen.insert(&b).second) { err(r,"duplicate nested block ownership/cycle"); return; }
+    if (parent) {
+        if (!b.id || b.id!=state.block++ || b.parent!=parent) err(r,"malformed nested block identity/parent");
+    } else if (!b.id || b.id!=state.block++ || b.parent) err(r,"malformed root block identity");
+    if (!b.terminated) err(r,"missing structural block completion");
+    for (const auto& meta:b.bindings) if (!spanOk(meta.span)) err(r,"binding metadata has invalid source provenance");
+    std::set<std::string> localNames;
+    if (!parent && fn) for (const auto& p:fn->parameters) localNames.insert(p.name);
+    if (induction) {
+        if (!inductionId || inductionId!=state.binding++) err(r,"malformed loop induction identity");
+        slots[inductionId]={scalar(TypeKind::I64),false};
+        bool found=false;
+        for (const auto& meta:b.bindings) if (meta.id==inductionId && !meta.value &&
+            meta.type==scalar(TypeKind::I64) && !meta.mutableBinding) { found=true; localNames.insert(meta.name); }
+        if (!found) err(r,"missing loop induction binding metadata");
+    }
+    auto used=[&](ValueId id)->Type {
+        auto it=values.find(id);
+        if (it==values.end()) { err(r,"inaccessible or use-before-definition ValueId"); return {}; }
         return it->second;
     };
-    auto selectorUses=[&](const std::vector<Selector>& selectors) {
-        for (const auto& s : selectors) {
-            if (s.slice) {
-                if (s.index) error(r,"slice selector has integer index");
-                for (auto v : {s.start,s.end,s.step}) if (v && used(*v)!=scalar(TypeKind::I64)) error(r,"slice field must be i64");
-            } else {
-                if (!s.index || s.start || s.end || s.step) error(r,"malformed integer selector");
-                if (s.index && used(*s.index)!=scalar(TypeKind::I64)) error(r,"index selector must be i64");
-            }
+    auto field=[&](std::optional<ValueId> id) { if (id && used(*id)!=scalar(TypeKind::I64)) err(r,"selector field is not i64"); };
+    auto selectors=[&](const std::vector<Selector>& list) {
+        for (const auto& s:list) {
+            if (s.slice) { if (s.index) err(r,"slice has integer index"); field(s.start); field(s.end); field(s.step); }
+            else { if (!s.index || s.start || s.end || s.step) err(r,"malformed integer selector"); field(s.index); }
         }
     };
-    for (const auto& step : b.steps) {
-        if (const auto* c=std::get_if<Check>(&step)) {
+    // A trapping Check must guard its dependent operation in this very region.
+    // This prevents even manually constructed IR from placing a branch Check outside its branch.
+    for (std::size_t ci=0;ci<b.steps.size();++ci) if (auto* c=std::get_if<Check>(&b.steps[ci])) {
+        bool attached=false;
+        for (std::size_t j=ci+1;j<b.steps.size();++j) {
+            if (std::holds_alternative<Flow>(b.steps[j]) || std::holds_alternative<Structured>(b.steps[j])) break;
+            auto* i=std::get_if<Instruction>(&b.steps[j]); if (!i) continue;
+            if (c->kind==CheckKind::Bounds && (i->op==Op::Index || i->op==Op::Slice) &&
+                c->operands.size()==2 && i->operands.size()==1 && i->operands[0]==c->operands[0] &&
+                c->axis<i->selectors.size() && i->selectors[c->axis].index==c->operands[1]) attached=true;
+            if (c->kind==CheckKind::Slice && i->op==Op::Slice && c->operands.size()==1 &&
+                i->operands.size()==1 && i->operands[0]==c->operands[0] && c->axis<i->selectors.size() &&
+                c->selectors.size()==1 && i->selectors[c->axis].slice &&
+                i->selectors[c->axis].start==c->selectors[0].start &&
+                i->selectors[c->axis].end==c->selectors[0].end &&
+                i->selectors[c->axis].step==c->selectors[0].step) attached=true;
+            if (c->kind==CheckKind::Broadcast && (i->op==Op::Add || i->op==Op::Subtract ||
+                i->op==Op::Multiply || i->op==Op::ElementMultiply) && i->operands==c->operands) attached=true;
+            if (c->kind==CheckKind::MatmulShape && i->op==Op::Matmul && i->operands==c->operands) attached=true;
+            if (attached) break;
+        }
+        if (!attached) err(r,"runtime Check is not attached to dependent operation in its region");
+    }
+    bool exited=false;
+    for (const auto& step:b.steps) {
+        if (exited) err(r,"step after unconditional exit");
+        if (auto* c=std::get_if<Check>(&step)) {
+            if (!spanOk(c->span)) err(r,"Check has invalid source provenance");
             for (auto id:c->operands) used(id);
-            selectorUses(c->selectors);
-            if (c->failureId.empty() || c->effect!=EffectClass::CheckedFailure) error(r,"malformed runtime check");
+            selectors(c->selectors);
+            auto operand=[&](std::size_t k)->Type { return k<c->operands.size()?used(c->operands[k]):Type{}; };
+            if (c->effect!=EffectClass::CheckedFailure || c->failureId.empty()) err(r,"malformed runtime Check effect/ID");
             if (c->kind==CheckKind::Bounds) {
-                if (c->operands.size()!=2 || used(c->operands[0]).kind!=TypeKind::Tensor ||
-                    used(c->operands[1])!=scalar(TypeKind::I64) || c->axis>=used(c->operands[0]).rank ||
-                    c->failureId!="TH-SPEC-BOUNDS") error(r,"malformed bounds check");
+                auto t=operand(0);
+                if (c->operands.size()!=2 || t.kind!=TypeKind::Tensor || operand(1)!=scalar(TypeKind::I64) ||
+                    c->axis>=t.rank || c->failureId!="TH-SPEC-BOUNDS") err(r,"malformed bounds Check");
             } else if (c->kind==CheckKind::Broadcast || c->kind==CheckKind::MatmulShape) {
-                if (c->operands.size()!=2 || used(c->operands[0]).kind!=TypeKind::Tensor ||
-                    used(c->operands[1]).kind!=TypeKind::Tensor ||
-                    c->failureId!=(c->kind==CheckKind::Broadcast ? "TH-SPEC-BROADCAST":"TH-SPEC-SHAPE")) error(r,"malformed shape check");
+                if (c->operands.size()!=2 || operand(0).kind!=TypeKind::Tensor || operand(1).kind!=TypeKind::Tensor ||
+                    c->failureId!=(c->kind==CheckKind::Broadcast?"TH-SPEC-BROADCAST":"TH-SPEC-SHAPE")) err(r,"malformed shape Check");
             } else if (c->kind==CheckKind::Slice) {
-                if (c->operands.size()!=1 || used(c->operands[0]).kind!=TypeKind::Tensor ||
-                    c->axis>=used(c->operands[0]).rank || c->selectors.size()!=1 || !c->selectors[0].slice ||
-                    c->failureId!="TH-SPEC-SLICE") error(r,"malformed slice check");
-            } else error(r,"invalid check kind");
+                auto t=operand(0);
+                if (c->operands.size()!=1 || t.kind!=TypeKind::Tensor || c->axis>=t.rank ||
+                    c->selectors.size()!=1 || !c->selectors[0].slice || c->failureId!="TH-SPEC-SLICE") err(r,"malformed slice Check");
+            } else err(r,"invalid Check kind");
+            continue;
+        }
+        if (auto* w=std::get_if<BindingWrite>(&step)) {
+            if (!spanOk(w->span)) err(r,"binding state change has invalid source provenance");
+            auto t=used(w->value);
+            if (w->declaration) {
+                const Binding* meta=nullptr;
+                for (const auto& x:b.bindings) if (x.id==w->binding) { meta=&x; break; }
+                if (!meta || !w->binding || w->binding!=state.binding++ || meta->value!=w->value ||
+                    meta->type!=t || !shapeOk(meta->type,meta->shape) || !localNames.insert(meta->name).second)
+                    err(r,"malformed branch binding declaration/join state");
+                if (meta) slots[w->binding]={meta->type,meta->mutableBinding};
+            } else {
+                auto it=slots.find(w->binding);
+                if (it==slots.end() || !it->second.mutableBinding || it->second.type!=t)
+                    err(r,"malformed loop-carried/outer binding rebind contract");
+            }
+            continue;
+        }
+        if (auto* f=std::get_if<Flow>(&step)) {
+            if (!spanOk(f->span)) err(r,"control exit has invalid source provenance");
+            if (f->kind==Flow::Kind::Return) {
+                if (!fn || !f->value || used(f->value.value_or(0))!=fn->result) err(r,"Return type mismatch");
+            } else if (!loopDepth || f->value) err(r,"break/continue outside loop or malformed payload");
+            exited=true; continue;
+        }
+        if (auto* s=std::get_if<Structured>(&step)) {
+            if (!spanOk(s->span)) err(r,"structured control node has invalid source provenance");
+            if (s->kind==Structured::Kind::If) {
+                if (used(s->condition)!=scalar(TypeKind::Bool) || !s->thenBlock || s->bodyBlock || s->conditionBlock || s->conditionResult)
+                    err(r,"If condition/region contract invalid");
+                if (s->thenBlock) inspect(m,*s->thenBlock,fn,state,r,values,slots,b.id,loopDepth);
+                if (s->elseBlock) inspect(m,*s->elseBlock,fn,state,r,values,slots,b.id,loopDepth);
+            } else if (s->kind==Structured::Kind::ForRange) {
+                if (used(s->start)!=scalar(TypeKind::I64) || used(s->end)!=scalar(TypeKind::I64) ||
+                    !s->bodyBlock || !s->induction || s->thenBlock || s->elseBlock || s->conditionBlock)
+                    err(r,"ForRange bounds/body contract invalid");
+                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,slots,b.id,loopDepth+1,true,s->induction);
+            } else if (s->kind==Structured::Kind::While) {
+                if (!s->conditionBlock || !s->bodyBlock || !s->conditionResult || s->thenBlock || s->elseBlock)
+                    err(r,"While structural regions invalid");
+                if (s->conditionBlock) {
+                    inspect(m,*s->conditionBlock,fn,state,r,values,slots,b.id,loopDepth);
+                    bool found=false;
+                    for (const auto& x:s->conditionBlock->steps) if (auto* i=std::get_if<Instruction>(&x);
+                        i && i->id==s->conditionResult) { found=i->type==scalar(TypeKind::Bool); break; }
+                    if (!found) err(r,"While condition result missing/non-bool");
+                }
+                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,slots,b.id,loopDepth+1);
+            } else err(r,"invalid structured kind");
             continue;
         }
         const auto& i=std::get<Instruction>(step);
+        if (!spanOk(i.span)) err(r,"instruction has invalid source provenance");
         std::vector<Type> operands;
         for (auto id:i.operands) operands.push_back(used(id));
-        selectorUses(i.selectors);
-        if (!validType(i.type) || !shapeValid(i.type,i.shape)) error(r,"invalid instruction type/shape");
-        if (i.id!=expected++) error(r,"instruction ValueIds must be unique and monotonic");
-        if (available.contains(i.id)) error(r,"duplicate ValueId");
-        auto require=[&](bool condition) { if (!condition) error(r,"wrong instruction result type or operand contract"); };
+        selectors(i.selectors);
+        if (!validType(i.type) || !shapeOk(i.type,i.shape)) err(r,"instruction type/shape invalid");
+        if (!i.id || i.id!=state.value++ || values.contains(i.id)) err(r,"duplicate/nonmonotonic ValueId");
+        auto require=[&](bool ok) { if (!ok) err(r,"instruction operand/result contract invalid"); };
         switch (i.op) {
             case Op::Integer: require(operands.empty() && i.integer && i.type==scalar(TypeKind::I64)); break;
             case Op::Boolean: require(operands.empty() && i.boolean && i.type==scalar(TypeKind::Bool)); break;
+            case Op::LoadBinding: {
+                auto it=slots.find(i.binding); require(operands.empty() && it!=slots.end() && it->second.type==i.type); break;
+            }
             case Op::TensorLiteral: {
-                bool correct=i.type.kind==TypeKind::Tensor && i.type.elements.size()==1 &&
+                bool ok=i.type.kind==TypeKind::Tensor && i.type.elements.size()==1 &&
                     i.type.elements[0]==scalar(TypeKind::I64) && (i.type.rank==1 || i.type.rank==2);
-                for (auto t:operands) correct &= t==scalar(TypeKind::I64);
-                require(correct); break;
+                for (auto t:operands) ok &= t==scalar(TypeKind::I64); require(ok); break;
             }
-            case Op::Tuple: {
-                bool correct=i.type.kind==TypeKind::Tuple && i.type.elements==operands;
-                require(correct); break;
-            }
+            case Op::Tuple: require(i.type.kind==TypeKind::Tuple && i.type.elements==operands); break;
             case Op::Negate: require(operands.size()==1 && i.type==operands[0] && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool); break;
-            case Op::Add: case Op::Subtract: case Op::ElementMultiply: case Op::Multiply: {
-                bool correct=operands.size()==2 && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool;
-                if (correct) {
-                    bool a=operands[0].kind==TypeKind::Tensor,bv=operands[1].kind==TypeKind::Tensor;
-                    correct &= (a || operands[0]==scalar(TypeKind::I64)) && (bv || operands[1]==scalar(TypeKind::I64));
-                    correct &= i.type==(a || bv ? tensor(scalar(TypeKind::I64),std::max(a?operands[0].rank:0U,bv?operands[1].rank:0U)) : scalar(TypeKind::I64));
-                    if (i.op==Op::Multiply) correct &= !a && !bv;
+            case Op::Add: case Op::Subtract: case Op::Multiply: case Op::ElementMultiply: {
+                bool ok=operands.size()==2 && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool;
+                if (ok) {
+                    bool a=operands[0].kind==TypeKind::Tensor,c=operands[1].kind==TypeKind::Tensor;
+                    ok &= (a || operands[0]==scalar(TypeKind::I64)) && (c || operands[1]==scalar(TypeKind::I64));
+                    ok &= i.type==(a||c?tensor(scalar(TypeKind::I64),std::max(a?operands[0].rank:0U,c?operands[1].rank:0U)):scalar(TypeKind::I64));
+                    if (i.op==Op::Multiply) ok &= !a && !c;
                 }
-                require(correct); break;
+                require(ok); break;
             }
-            case Op::Matmul: require(operands.size()==2 && sameElement(operands[0],operands[1]) && operands[0].rank==2 && operands[1].rank==2 && i.type==tensor(scalar(TypeKind::I64),2)); break;
+            case Op::Matmul: require(operands.size()==2 && operands[0].kind==TypeKind::Tensor && operands[1].kind==TypeKind::Tensor &&
+                operands[0].rank==2 && operands[1].rank==2 && i.type==tensor(scalar(TypeKind::I64),2)); break;
             case Op::Index: case Op::Slice: {
-                bool correct=operands.size()==1 && operands[0].kind==TypeKind::Tensor && i.selectors.size()<=operands[0].rank;
-                if (correct) {
-                    std::uint32_t removed=0; bool hasSlice=false;
-                    for (auto s:i.selectors) { removed+=!s.slice; hasSlice|=s.slice; }
-                    std::uint32_t rank=operands[0].rank-removed;
-                    correct &= i.type==(rank==0 ? scalar(TypeKind::I64) : tensor(scalar(TypeKind::I64),rank));
-                    correct &= (i.op==Op::Slice)==hasSlice && i.borrowedView==(hasSlice || rank>0);
+                bool ok=operands.size()==1 && operands[0].kind==TypeKind::Tensor && i.selectors.size()<=operands[0].rank;
+                if (ok) {
+                    unsigned removed=0; bool sliced=false;
+                    for (auto s:i.selectors) { removed+=!s.slice; sliced|=s.slice; }
+                    auto rank=operands[0].rank-removed;
+                    ok &= i.type==(rank?tensor(scalar(TypeKind::I64),rank):scalar(TypeKind::I64));
+                    ok &= (i.op==Op::Slice)==sliced && i.borrowedView==(sliced || rank>0);
                 }
-                require(correct); break;
+                require(ok); break;
             }
             case Op::Transpose: require(operands.size()==1 && operands[0].kind==TypeKind::Tensor && operands[0].rank==2 && i.type==operands[0] && i.borrowedView); break;
-            case Op::Sum: require(operands.size()==2 && operands[0].kind==TypeKind::Tensor && operands[1]==scalar(TypeKind::I64) && i.axis<operands[0].rank && i.type==(operands[0].rank==1 ? scalar(TypeKind::I64) : tensor(scalar(TypeKind::I64),operands[0].rank-1))); break;
+            case Op::Sum: require(operands.size()==2 && operands[0].kind==TypeKind::Tensor && operands[1]==scalar(TypeKind::I64) &&
+                i.axis<operands[0].rank && i.type==(operands[0].rank==1?scalar(TypeKind::I64):tensor(scalar(TypeKind::I64),operands[0].rank-1))); break;
             case Op::Call: {
-                if (i.callee==0 || i.callee>m.functions.size()) { error(r,"invalid function call target"); break; }
+                if (!i.callee || i.callee>m.functions.size()) { err(r,"invalid function target"); break; }
                 const auto& target=m.functions[i.callee-1];
-                bool correct=target.id==i.callee && i.type==target.result && operands.size()==target.parameters.size();
-                if (operands.size()==target.parameters.size()) for (std::size_t k=0;k<operands.size();++k) correct &= operands[k]==target.parameters[k].type;
-                require(correct); break;
+                bool ok=target.id==i.callee && i.type==target.result && operands.size()==target.parameters.size();
+                if (operands.size()==target.parameters.size()) for (std::size_t k=0;k<operands.size();++k) ok &= operands[k]==target.parameters[k].type;
+                require(ok); break;
             }
         }
-        available.emplace(i.id,i.type);
+        values.emplace(i.id,i.type);
     }
-    for (const auto& binding:b.bindings) used(binding.value);
-    if (!b.terminated || (function && !b.returned) || (!function && b.returned)) error(r,"missing/invalid block terminator");
-    if (b.returned && function && used(*b.returned)!=function->result) error(r,"return type mismatch");
+    if (b.returned && (!fn || used(*b.returned)!=fn->result)) err(r,"block Return type mismatch");
 }
 }
 VerificationResult verify(const Module& m) {
-    VerificationResult result;
-    std::set<std::string> names;
+    VerificationResult r; std::set<std::string> names;
     for (std::size_t k=0;k<m.functions.size();++k) {
         const auto& f=m.functions[k];
-        if (f.id!=k+1 || !names.insert(f.name).second) error(result,"FunctionIds/names must be deterministic and unique");
-        if (!validType(f.result)) error(result,"invalid function result type");
-        block(m,f.body,&f,result);
+        if (f.id!=k+1 || !names.insert(f.name).second) err(r,"FunctionId/name invalid");
+        if (!validType(f.result)) err(r,"function result type invalid");
+        State state; Values values; Slots slots;
+        for (const auto& p:f.parameters) {
+            if (!spanOk(p.span)) err(r,"parameter has invalid source provenance");
+            if (p.id!=state.value++ || p.binding!=state.binding++ || values.contains(p.id) || slots.contains(p.binding))
+                err(r,"parameter ID invalid");
+            if (!validType(p.type) || !shapeOk(p.type,p.shape)) err(r,"parameter type/shape invalid");
+            values[p.id]=p.type; slots[p.binding]={p.type,false};
+        }
+        inspect(m,f.body,&f,state,r,values,slots,0,0);
+        if (!returns(f.body)) err(r,"function lacks return on some path");
     }
-    block(m,m.initializer,nullptr,result);
-    result.ok=result.errors.empty();
-    return result;
+    State init; inspect(m,m.initializer,nullptr,init,r,{}, {},0,0);
+    r.ok=r.errors.empty(); return r;
 }
 }

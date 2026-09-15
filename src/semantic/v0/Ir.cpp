@@ -48,6 +48,7 @@ namespace {
 std::string opName(Op op) {
     switch (op) {
         case Op::Integer: return "integer"; case Op::Boolean: return "boolean";
+        case Op::LoadBinding: return "load_binding";
         case Op::TensorLiteral: return "tensor_literal"; case Op::Tuple: return "tuple";
         case Op::Negate: return "negate"; case Op::Add: return "add";
         case Op::Subtract: return "subtract"; case Op::Multiply: return "multiply";
@@ -75,14 +76,16 @@ void selectors(std::ostringstream& out, const std::vector<Selector>& values) {
         out << ')';
     }
 }
-void block(std::ostringstream& out, const Block& b) {
+void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
+    out << indent << "block #" << b.id << " parent #" << b.parent << '\n';
     for (const auto& step : b.steps) {
         if (const auto* i = std::get_if<Instruction>(&step)) {
-            out << "  %" << i->id << " = " << opName(i->op) << ':' << typeName(i->type);
+            out << indent << "%" << i->id << " = " << opName(i->op) << ':' << typeName(i->type);
             ids(out, i->operands); selectors(out, i->selectors);
             if (i->integer) out << " value=" << *i->integer;
             if (i->boolean) out << " value=" << (*i->boolean ? "true" : "false");
             if (i->op == Op::Call) out << " @" << i->callee;
+            if (i->op == Op::LoadBinding) out << " $" << i->binding;
             if (i->op == Op::Sum) out << " axis=" << i->axis;
             if (i->borrowedView) out << " borrowed_view";
             if (!i->shape.extents.empty()) {
@@ -93,17 +96,34 @@ void block(std::ostringstream& out, const Block& b) {
                 out << ']';
             }
             out << '\n';
+        } else if (const auto* c=std::get_if<Check>(&step)) {
+            out << indent << "check " << checkName(c->kind) << " -> " << c->failureId;
+            ids(out, c->operands); selectors(out, c->selectors); out << '\n';
+        } else if (const auto* w=std::get_if<BindingWrite>(&step)) {
+            out << indent << (w->declaration?"declare ":"rebind ") << '$' << w->binding << "=%" << w->value << '\n';
+        } else if (const auto* f=std::get_if<Flow>(&step)) {
+            out << indent << (f->kind==Flow::Kind::Return?"return":f->kind==Flow::Kind::Break?"break":"continue");
+            if (f->value) out << " %" << *f->value; out << '\n';
         } else {
-            const auto& c = std::get<Check>(step);
-            out << "  check " << checkName(c.kind) << " -> " << c.failureId;
-            ids(out, c.operands); selectors(out, c.selectors);
-            out << '\n';
+            const auto& s=std::get<Structured>(step);
+            if (s.kind==Structured::Kind::If) {
+                out << indent << "if %" << s.condition << '\n';
+                if (s.thenBlock) block(out,*s.thenBlock,indent+"  ");
+                if (s.elseBlock) { out << indent << "else\n"; block(out,*s.elseBlock,indent+"  "); }
+            } else if (s.kind==Structured::Kind::ForRange) {
+                out << indent << "for_range $" << s.induction << " %" << s.start << ":%" << s.end << '\n';
+                if (s.bodyBlock) block(out,*s.bodyBlock,indent+"  ");
+            } else {
+                out << indent << "while\n";
+                if (s.conditionBlock) block(out,*s.conditionBlock,indent+"  ");
+                if (s.conditionResult) out << indent << "condition %" << *s.conditionResult << '\n';
+                if (s.bodyBlock) block(out,*s.bodyBlock,indent+"  ");
+            }
         }
     }
-    for (const auto& binding : b.bindings) out << "  bind " << binding.name << "=%" << binding.value << (binding.mutableBinding ? " mut" : "") << '\n';
-    if (b.terminated && b.returned) out << "  return %" << *b.returned << '\n';
-    else if (b.terminated) out << "  end\n";
-    else out << "  <unterminated>\n";
+    for (const auto& binding : b.bindings) out << indent << "bind " << binding.name << "=%" << binding.value << " $" << binding.id << (binding.mutableBinding ? " mut" : "") << '\n';
+    if (b.terminated) out << indent << "end\n";
+    else out << indent << "<unterminated>\n";
 }
 }
 std::string dump(const Module& m) {
@@ -114,7 +134,7 @@ std::string dump(const Module& m) {
     for (const auto& i : m.imports) out << "import " << i.path << " as " << i.alias << " unresolved\n";
     for (const auto& f : m.functions) {
         out << "fn @" << f.id << ' ' << f.name << " -> " << typeName(f.result) << '\n';
-        for (const auto& p : f.parameters) out << "  param %" << p.id << ' ' << p.name << ':' << typeName(p.type) << " read_only\n";
+        for (const auto& p : f.parameters) out << "  param %" << p.id << " $" << p.binding << ' ' << p.name << ':' << typeName(p.type) << " read_only\n";
         block(out, f.body);
     }
     out << "initializer\n"; block(out, m.initializer);

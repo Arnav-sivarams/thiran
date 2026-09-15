@@ -252,15 +252,58 @@ private:
         auto value = expression();
         return {joined(begin.span, value->span), name.text, mutableBinding, std::move(value)};
     }
+    std::vector<StmtPtr> body() {
+        expect(TokenKind::LeftBrace, "expected '{' to begin block");
+        std::vector<StmtPtr> result;
+        separators();
+        while (!at(TokenKind::RightBrace)) {
+            if (at(TokenKind::End)) fail("missing '}' delimiter in block");
+            result.push_back(std::make_unique<Statement>(statement()));
+            requireSeparator(true); separators();
+        }
+        take();
+        return result;
+    }
     Statement statement() {
-        if (at(TokenKind::Let)) return letStmt();
+        if (at(TokenKind::Let)) return Statement{letStmt()};
         if (at(TokenKind::Return)) {
             auto begin = take(); auto value = expression();
-            return ReturnStmt{joined(begin.span, value->span), std::move(value)};
+            return Statement{ReturnStmt{joined(begin.span, value->span), std::move(value)}};
+        }
+        if (at(TokenKind::If)) {
+            auto begin=take(); auto condition=expression();
+            IfStmt n; n.condition=std::move(condition); n.thenBody=body();
+            auto end=tokens_[pos_-1].span;
+            // A newline between a closed then-block and else belongs to the if statement.
+            auto saved=pos_; softNewlines();
+            if (match(TokenKind::Else)) { n.hasElse=true; softNewlines(); n.elseBody=body(); end=tokens_[pos_-1].span; }
+            else pos_=saved;
+            n.span=joined(begin.span,end); return Statement{std::move(n)};
+        }
+        if (at(TokenKind::For)) {
+            auto begin=take();
+            auto variable=expect(TokenKind::Identifier,"malformed for: expected loop variable");
+            expect(TokenKind::In,"malformed for: expected 'in'");
+            ForStmt n; n.variable=variable.text; n.start=expression();
+            if (match(TokenKind::Colon)) {
+                n.end=expression();
+            } else { n.iterable=std::move(n.start); }
+            n.body=body(); n.span=joined(begin.span,tokens_[pos_-1].span);
+            return Statement{std::move(n)};
+        }
+        if (at(TokenKind::While)) {
+            auto begin=take(); WhileStmt n; n.condition=expression(); n.body=body();
+            n.span=joined(begin.span,tokens_[pos_-1].span); return Statement{std::move(n)};
+        }
+        if (at(TokenKind::Break)) {
+            auto token=take(); return Statement{BreakStmt{token.span}};
+        }
+        if (at(TokenKind::Continue)) {
+            auto token=take(); return Statement{ContinueStmt{token.span}};
         }
         if (at(TokenKind::Identifier) && peek(1).kind == TokenKind::Equal) {
             auto name = take(); take(); auto value = expression();
-            return RebindStmt{joined(name.span, value->span), name.text, std::move(value)};
+            return Statement{RebindStmt{joined(name.span, value->span), name.text, std::move(value)}};
         }
         fail("unexpected token in function body");
     }
@@ -293,14 +336,9 @@ private:
         if (match(TokenKind::Arrow)) function.resultType = typeSyntax();
         else if (exported) fail("malformed exported function signature: result type required");
         softNewlines();
-        expect(TokenKind::LeftBrace, "malformed function signature: expected '{'");
-        separators();
-        while (!at(TokenKind::RightBrace)) {
-            if (at(TokenKind::End)) fail("missing '}' delimiter in function body");
-            function.body.push_back(statement());
-            requireSeparator(true); separators();
-        }
-        function.span.end = take().span.end;
+        if (!at(TokenKind::LeftBrace)) fail("malformed function signature: expected '{'");
+        function.body=body();
+        function.span.end = tokens_[pos_-1].span.end;
         return function;
     }
 };

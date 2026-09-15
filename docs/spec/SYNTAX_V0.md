@@ -6,7 +6,7 @@ This document describes the **implemented TH-004 syntax subset** under the froze
 
 Identifiers begin with an ASCII letter or `_` and continue with ASCII letters, digits, or `_`. Integer literals are nonempty decimal digit sequences; their value/range and contextual dtype are not checked here. Decimal real forms `digits.digits` are tokenized but rejected as expressions in TH-004, pending typing and literal conversion. Import paths use double-quoted strings; a backslash protects the next non-newline character lexically, but decoding/UTF-8/path validation is deferred. Unterminated strings are diagnosed. Only `//` line comments exist. Whitespace other than newlines is ignored.
 
-Keywords used in grammar: `let`, `mut`, `fn`, `export`, `return`, `import`, `as`, `true`, `false`. `if`, `else`, `for`, `in`, `while`, `break`, `continue`, and `struct` are recognized/reserved but their grammar is unsupported.
+Keywords used in grammar: `let`, `mut`, `fn`, `export`, `return`, `import`, `as`, `true`, `false`, `if`, `else`, `for`, `in`, `while`, `break`, `continue`. `struct` remains reserved but unsupported.
 
 Operators/punctuation: `+ - * .* / ./ = : , ; . ( ) [ ] { } < > ->`. Lexing uses maximal munch: `.*`/`./` precede `.`, and `->` precedes `-`. Unsupported characters cause located lexical diagnostics; malformed sequences of individually valid tokens cause located parser diagnostics.
 
@@ -14,12 +14,18 @@ Operators/punctuation: `+ - * .* / ./ = : , ; . ( ) [ ] { } < > ->`. Lexing uses
 
 Newlines or explicit semicolons separate ordinary module items and function-body statements. Blank lines/comments are not AST statements. Within parentheses or brackets, newlines are insignificant and expressions may span lines. In a tensor literal, semicolon separates rows, not statements. A statement on one physical line must be separated from the next with `;` unless a newline intervenes.
 
-Module items in this subset are imports, functions, and `let` bindings. Function bodies contain `let`, `return`, and simple-identifier rebinding. Expression statements are not supported. The parser represents rebinding (`x = expr`) as a distinct `RebindStmt` but does not validate mutability or execute it.
+Module items in this subset are imports, functions, and `let` bindings. Function bodies and nested braced blocks contain `let`, `return`, simple-identifier rebinding, `if`/`else`, range/iterable `for`, `while`, `break`, and `continue`. Expression statements are not supported. The parser represents rebinding (`x = expr`) as a distinct `RebindStmt`; the semantic analyzer validates mutability.
 
 ```text
 binding        = "let" ["mut"] identifier "=" expression
 rebind         = identifier "=" expression      // function body only
 return         = "return" expression
+if             = "if" expression block ["else" block]
+for-range      = "for" identifier "in" expression ":" expression block
+for-iterable   = "for" identifier "in" expression block // parser only; semantic stage diagnostic
+while          = "while" expression block
+loop-exit      = "break" | "continue"
+block          = "{" statements "}"
 import         = "import" string "as" identifier
 function       = ["export"] "fn" identifier "(" parameters ")"
                  ["->" type] "{" statements "}"
@@ -27,7 +33,7 @@ parameters     = [parameter {"," parameter} [","]]
 parameter      = identifier ":" type
 ```
 
-Every parameter requires a type. An exported function requires a result type. A private function result may be omitted syntactically; inference is future semantic work. Function bodies require a closing brace and ordinary statement separation.
+Every parameter requires a type. An exported function requires a result type. A private function result may be omitted syntactically and inferred when acyclic. Function and nested blocks require a closing brace and ordinary newline/semicolon statement separation. A newline immediately before `else` belongs to its preceding `if`. `if` is a statement, not an expression. Every new structured AST node retains a `SourceSpan`.
 
 ## Type syntax
 
@@ -78,13 +84,13 @@ export fn add(a: Tensor<i64, 2>, b: Tensor<i64, 2>) -> Tensor<i64, 2> {
 }
 ```
 
-Imports are AST declarations only: no file loading, linking, or visibility resolution. No `if`/loops/struct declarations, `const`, function generics, ownership modes, indexed assignment, rank > 2 literals, real-literal expressions, strings outside imports, comparison operators, or executable semantics are implemented. R12 grammar is not a source of V0 rules.
+Imports are AST declarations only: no file loading, linking, or visibility resolution. Range-for uses a context-specific colon, distinct from type annotations and tensor slice selectors. The iterable-for form is parsed but diagnosed as `TH005C-ITERABLE-FOR-DEFERRED` during semantic analysis; borrowed leading-axis iteration awaits ownership/view work. No `struct` declarations, `const`, function generics, ownership modes, indexed assignment, rank > 2 literals, real-literal expressions, strings outside imports, comparison operators, or `if` expressions are implemented. R12 grammar is not a source of V0 rules.
 
 ## Conformance boundary
 
 ```text
-source text -> TH-004 spanned syntax AST
-future: AST -> TH-005 typed structured semantic IR -> execution
+source text -> TH-004/TH-005C spanned syntax AST
+AST -> TH-005/TH-005C typed structured semantic IR -> execution
         -> canonical TH-003 result comparison
 ```
 

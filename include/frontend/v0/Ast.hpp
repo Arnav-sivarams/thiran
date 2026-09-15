@@ -42,7 +42,14 @@ struct Parameter { SourceSpan span; std::string name; TypeSyntax type; };
 struct LetStmt { SourceSpan span; std::string name; bool mutableBinding; ExprPtr value; };
 struct RebindStmt { SourceSpan span; std::string name; ExprPtr value; };
 struct ReturnStmt { SourceSpan span; ExprPtr value; };
-using Statement = std::variant<LetStmt, RebindStmt, ReturnStmt>;
+struct Statement;
+using StmtPtr = std::unique_ptr<Statement>;
+struct IfStmt { SourceSpan span; ExprPtr condition; std::vector<StmtPtr> thenBody, elseBody; bool hasElse = false; };
+struct ForStmt { SourceSpan span; std::string variable; ExprPtr start, end, iterable; std::vector<StmtPtr> body; };
+struct WhileStmt { SourceSpan span; ExprPtr condition; std::vector<StmtPtr> body; };
+struct BreakStmt { SourceSpan span; };
+struct ContinueStmt { SourceSpan span; };
+struct Statement { std::variant<LetStmt, RebindStmt, ReturnStmt, IfStmt, ForStmt, WhileStmt, BreakStmt, ContinueStmt> node; };
 struct ImportDecl { SourceSpan span; std::string path, alias; };
 struct FunctionDecl {
     SourceSpan span;
@@ -50,7 +57,7 @@ struct FunctionDecl {
     bool exported;
     std::vector<Parameter> parameters;
     std::optional<TypeSyntax> resultType;
-    std::vector<Statement> body;
+    std::vector<StmtPtr> body;
 };
 using TopLevel = std::variant<ImportDecl, FunctionDecl, LetStmt>;
 struct Module {
