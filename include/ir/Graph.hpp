@@ -40,6 +40,13 @@ public:
 
     void removeNode(Node* node);
 
+    // Pointer comparison only: callers must not dereference a removed node.
+    bool containsNode(const Node* node) const;
+
+    // Preserve the consumer's input (and edge) position when changing its producer.
+    // Refuses a replacement that would collapse two distinct input edges.
+    bool replaceInput(Node* consumer, Node* oldProducer, Node* newProducer);
+
     Node* findNode(
         const std::string& name
     );

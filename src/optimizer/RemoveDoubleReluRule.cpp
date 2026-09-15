@@ -1,6 +1,8 @@
 #include "optimizer/RemoveDoubleReluRule.hpp"
 
 #include <iostream>
+#include <algorithm>
+#include <stdexcept>
 
 namespace thiran
 {
@@ -17,12 +19,27 @@ bool RemoveDoubleReluRule::match(Node* node)
         return false;
     }
 
-    if(node->inputs.empty())
+    if(node->inputs.size() != 1 || node->inputs[0] == nullptr)
     {
         return false;
     }
 
-    return node->inputs[0]->op == Operation::ReLU;
+    Node* previous = node->inputs[0];
+    if(previous->op != Operation::ReLU)
+    {
+        return false;
+    }
+    // Graph edges are unique producer/consumer pairs. Replacing this input
+    // cannot merge two operand positions into one edge.
+    for(Node* consumer : node->outputs)
+    {
+        if(std::find(consumer->inputs.begin(), consumer->inputs.end(), previous)
+            != consumer->inputs.end())
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool RemoveDoubleReluRule::rewrite(Graph& graph, Node* node)
@@ -39,8 +56,10 @@ bool RemoveDoubleReluRule::rewrite(Graph& graph, Node* node)
 
     for(auto consumer : consumers)
     {
-        graph.disconnect(node, consumer);
-        graph.connect(previous, consumer);
+        if(!graph.replaceInput(consumer, node, previous))
+        {
+            throw std::runtime_error("double-ReLU input replacement failed");
+        }
     }
 
     graph.removeNode(node);

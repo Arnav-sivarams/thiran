@@ -1,6 +1,8 @@
 #include "optimizer/FusionRule.hpp"
 
 #include <vector>
+#include <algorithm>
+#include <stdexcept>
 
 namespace thiran
 {
@@ -9,14 +11,15 @@ bool FusionRule::run(Graph& graph)
 {
     bool changed = false;
 
-    std::vector<Node*> candidates;
-    for(auto& node : graph.nodes)
-    {
-        candidates.push_back(node.get());
-    }
+    const auto candidates = graph.nodes;
 
-    for(auto node : candidates)
+    for(const auto& holder : candidates)
     {
+        Node* node = holder.get();
+        if(!graph.containsNode(node))
+        {
+            continue;
+        }
         if(node->op != Operation::MatMul)
         {
             continue;
@@ -40,15 +43,26 @@ bool FusionRule::run(Graph& graph)
         }
 
         const auto consumers = next->outputs;
-        graph.disconnect(node, next);
-        node->op = Operation::FusedMatMulRelu;
+        // The Graph cannot represent the same producer in two operand slots.
+        if(std::any_of(consumers.begin(), consumers.end(),
+            [node](Node* consumer)
+            {
+                return std::find(consumer->inputs.begin(), consumer->inputs.end(), node)
+                    != consumer->inputs.end();
+            }))
+        {
+            continue;
+        }
 
         for(auto consumer : consumers)
         {
-            graph.disconnect(next, consumer);
-            graph.connect(node, consumer);
+            if(!graph.replaceInput(consumer, next, node))
+            {
+                throw std::runtime_error("fusion input replacement failed");
+            }
         }
 
+        node->op = Operation::FusedMatMulRelu;
         graph.removeNode(next);
 
         changed = true;

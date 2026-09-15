@@ -126,6 +126,46 @@ void Graph::removeNode(Node* node)
     );
 }
 
+bool Graph::containsNode(const Node* node) const
+{
+    return node != nullptr && std::any_of(
+        nodes.begin(), nodes.end(),
+        [node](const std::shared_ptr<Node>& holder)
+        {
+            return holder.get() == node;
+        }
+    );
+}
+
+bool Graph::replaceInput(Node* consumer, Node* oldProducer, Node* newProducer)
+{
+    if(!containsNode(consumer) || !containsNode(oldProducer) ||
+       !containsNode(newProducer) || oldProducer == newProducer)
+    {
+        return false;
+    }
+
+    auto input = std::find(consumer->inputs.begin(), consumer->inputs.end(), oldProducer);
+    auto oldOutput = std::find(oldProducer->outputs.begin(), oldProducer->outputs.end(), consumer);
+    auto edge = std::find_if(edges.begin(), edges.end(),
+        [oldProducer, consumer](const Edge& candidate)
+        {
+            return candidate.source == oldProducer && candidate.destination == consumer;
+        });
+    if(input == consumer->inputs.end() || oldOutput == oldProducer->outputs.end() ||
+       edge == edges.end() ||
+       std::find(consumer->inputs.begin(), consumer->inputs.end(), newProducer) != consumer->inputs.end())
+    {
+        return false;
+    }
+
+    *input = newProducer;
+    oldProducer->outputs.erase(oldOutput);
+    newProducer->outputs.push_back(consumer);
+    edge->source = newProducer;
+    return true;
+}
+
 Node* Graph::findNode(
     const std::string& name
 )

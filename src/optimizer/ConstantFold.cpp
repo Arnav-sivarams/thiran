@@ -1,6 +1,8 @@
 #include "optimizer/ConstantFold.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace thiran
 {
@@ -13,15 +15,49 @@ bool isConstant(Node* node)
     return node && node->op == Operation::Constant && node->shape.empty();
 }
 
-void replaceWithInput(Graph& graph, Node* node, Node* replacement)
+bool replaceWithInput(Graph& graph, Node* node, Node* replacement)
 {
-    const auto consumers = node->outputs;
-    for(auto consumer : consumers)
+    if(!graph.containsNode(node) || !graph.containsNode(replacement) ||
+       node == replacement)
     {
-        graph.disconnect(node, consumer);
-        graph.connect(replacement, consumer);
+        return false;
+    }
+
+    const auto consumers = node->outputs;
+    // Preflight the entire fan-out: rejecting one unrepresentable consumer must
+    // not leave earlier consumers rewired or the folded node removed.
+    for(Node* consumer : consumers)
+    {
+        const auto edgeCount = std::count_if(graph.edges.begin(), graph.edges.end(),
+            [node, consumer](const Edge& edge)
+            {
+                return edge.source == node && edge.destination == consumer;
+            });
+        if(!graph.containsNode(consumer) ||
+           std::count(consumer->inputs.begin(), consumer->inputs.end(), node) != 1 ||
+           std::count(node->outputs.begin(), node->outputs.end(), consumer) != 1 ||
+           edgeCount != 1 ||
+           std::find(consumer->inputs.begin(), consumer->inputs.end(), replacement) != consumer->inputs.end() ||
+           std::find(replacement->outputs.begin(), replacement->outputs.end(), consumer) != replacement->outputs.end() ||
+           std::any_of(graph.edges.begin(), graph.edges.end(),
+               [replacement, consumer](const Edge& edge)
+               {
+                   return edge.source == replacement && edge.destination == consumer;
+               }))
+        {
+            return false;
+        }
+    }
+
+    for(Node* consumer : consumers)
+    {
+        if(!graph.replaceInput(consumer, node, replacement))
+        {
+            throw std::logic_error("ConstantFold replacement failed after preflight");
+        }
     }
     graph.removeNode(node);
+    return true;
 }
 
 }

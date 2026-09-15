@@ -102,6 +102,32 @@ bool GraphVerifier::verifyEdges(Graph& graph)
                 std::cout << "Invalid input edge on " << node->name << "\n";
                 return false;
             }
+            if(std::none_of(graph.edges.begin(), graph.edges.end(),
+                [input, destination = node.get()](const Edge& edge)
+                {
+                    return edge.source == input && edge.destination == destination;
+                }))
+            {
+                std::cout << "Input adjacency has no edge on " << node->name << "\n";
+                return false;
+            }
+        }
+        for(auto output : node->outputs)
+        {
+            if(!output || !nodes.count(output))
+            {
+                std::cout << "Invalid output edge on " << node->name << "\n";
+                return false;
+            }
+            if(std::none_of(graph.edges.begin(), graph.edges.end(),
+                [source = node.get(), output](const Edge& edge)
+                {
+                    return edge.source == source && edge.destination == output;
+                }))
+            {
+                std::cout << "Output adjacency has no edge on " << node->name << "\n";
+                return false;
+            }
         }
     }
 

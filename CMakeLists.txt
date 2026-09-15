@@ -47,6 +47,10 @@ add_custom_target(uninstall
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
+    target_link_libraries(rewrite_regression_tests PRIVATE thiran_core)
+    add_test(NAME RewriteRegressionTests COMMAND rewrite_regression_tests)
+
     if(THIRAN_PYTHON_EXECUTABLE)
         set(THIRAN_TEST_PYTHON "${THIRAN_PYTHON_EXECUTABLE}")
     elseif(EXISTS "${CMAKE_SOURCE_DIR}/.venv/bin/python")
