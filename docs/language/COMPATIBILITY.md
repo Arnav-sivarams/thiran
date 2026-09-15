@@ -1,0 +1,27 @@
+# Stability and compatibility policy (TH-001)
+
+**Present status:** `0.2.0-alpha-dev` is experimental. This policy defines a release gate and future obligations; it does not retroactively make current R12 syntax, `.pt` bundles, generated Python, CLI output, or Region plans stable interfaces.
+
+## Specification ownership and staging
+
+The Thiran project owns a versioned language specification and a conformance suite. A stable edition is declared only after syntax, typing, ownership, numeric, array, module, error, effect, and execution contracts have tests on reference and native implementations. Proposed changes enter a documented experimental namespace or explicit feature gate with compiler-version metadata; they are not implicitly part of the stable language. Stable programs cannot silently depend on an experimental feature. Experimental features may change in pre-1.0 releases with migration notes. The specification, not whichever reference backend is easiest to implement, resolves disputes.
+
+## Source and public API
+
+Use semantic versions for compiler and standard-library releases, with a separate language edition in source/project metadata. Before 1.0, incompatible changes are allowed only with named migration notes and conformance updates. After a stable edition, a compatible compiler must accept conforming source for that edition and preserve its specified meaning. A breaking source or semantic change requires a new edition or major version; the compiler may support multiple editions during migration. Public API signatures include parameter/result types, ownership modes, generic constraints, effect declarations, shape contracts, and documented failures. Ordinary formatting and diagnostics may evolve without changing accepted-program meaning; machine-readable diagnostic IDs need an explicit compatibility policy before stabilization.
+
+Removing or changing a stable feature follows a published sequence: announce and document replacement, warn in at least one minor release cycle, offer a migration path and overlapping support window, then remove only in a breaking edition/major release. Security fixes may accelerate the schedule with an explicit advisory and compatibility impact. No feature may be declared stable if its only implementation is an undocumented backend behavior. Standard-library namespaces and public APIs follow the same versioning and deprecation discipline; experimental libraries live under explicit experimental names.
+
+## Packages and projects
+
+Packages declare their Thiran edition, compiler minimum/maximum compatibility when needed, dependency version constraints, and features. A lock file records resolved package versions and content identities for reproducibility. Compatibility checks use declared public signatures and edition rules, not arbitrary directory search. The package manifest, resolver, registry, and lock format are implementation work for TH-009; no network package system is promised here.
+
+## Artifacts, runtime, and native ABI
+
+Every future executable/model/checkpoint artifact must record language edition, compiler version/build identity, target triple/device requirements, enabled features, numeric profile, runtime version, artifact schema version, and any custom primitive ABI/dependency requirements. Loading must reject incompatible metadata with a recoverable error or use a documented migration path; it cannot silently reinterpret weights, state, strides, or dtypes. Runtime and artifact schemas get explicit compatibility windows and conformance tests. State and checkpoint formats are separate versioned contracts from compiler IR serialization. Internal AST/IR/RegionPlan structures are not a public artifact ABI.
+
+There is **no stable native ABI today**. The initial native ABI is versioned and may be private to matched compiler/runtime releases. A public C-compatible FFI boundary, symbol naming, calling conventions, tensor descriptors, error/status handling, device ownership, and lifetime rules require a separate specification and cross-version tests before ABI stability can be promised (TH-010). A compiler upgrade need not load arbitrary older native binaries unless their declared ABI window permits it. Python/PyTorch interop has its own versioned conversion contract and never supplies the native ABI definition.
+
+## Conformance and compatibility gates
+
+Conformance covers scalar typing/casts/overflow/IEEE behavior and deterministic contextual decimal-literal rounding, zero-based indexing and half-open slicing, shapes/broadcasting/layout-independent values, non-consuming immutable aliasing, explicit move/copy, exclusive-mutation rejection and view lifetimes, default read-only function parameters and explicit exceptional modes, structured control flow, Result/resource-failure behavior, import visibility, state/effects, and differentiated programs when AD stabilizes. Tests include valid programs, expected diagnostics, failure cases, reference/native CPU equivalence, and GPU equivalence at declared precision. Aliasing tests must show that `let B = A; let C = A + B` neither invalidates `A` nor silently deep-copies, and that a live alias blocks mutation. The numerical tolerance or exactness envelope for each operation/dtype/profile is published before that operation is stable on a backend. Release checks include source migration tests, standard-library API checks, artifact-schema compatibility tests, and native ABI checks only after that ABI exists.
