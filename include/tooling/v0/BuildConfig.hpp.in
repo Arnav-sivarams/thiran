@@ -1,0 +1,9 @@
+#pragma once
+#include <string>
+#include <vector>
+
+namespace thiran::v0::tooling {
+inline std::vector<std::string> configuredHostCompilerArguments() {
+    return {@THIRAN_V0_HOST_ARGUMENTS_CPP@};
+}
+}

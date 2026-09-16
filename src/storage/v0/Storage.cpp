@@ -49,7 +49,7 @@ StorageHandle allocate(std::size_t bytes) {
 }
 std::size_t elementWidth(DType dtype) {
     switch (dtype) {
-    case DType::Bool: return 1;
+    case DType::Bool: case DType::U8: return 1;
     case DType::I32: case DType::U32: case DType::F32: return 4;
     case DType::I64: case DType::U64: case DType::F64: return 8;
     default: fail("TH007-DTYPE");
@@ -57,7 +57,7 @@ std::size_t elementWidth(DType dtype) {
 }
 std::string dtypeName(DType dtype) {
     switch (dtype) {
-    case DType::Bool: return "bool"; case DType::I32: return "i32";
+    case DType::Bool: return "bool"; case DType::U8: return "u8"; case DType::I32: return "i32";
     case DType::I64: return "i64"; case DType::U32: return "u32";
     case DType::U64: return "u64"; case DType::F32: return "f32";
     case DType::F64: return "f64"; default: fail("TH007-DTYPE");
@@ -192,6 +192,70 @@ void MutableTensorRef::storeI64(const std::vector<std::uint64_t>& indices, std::
     const auto offset = tensor_.checkedLogicalOffset(indices);
     std::memcpy(tensor_.descriptor_.storage.object_->bytes.data() + checkedByteCount(offset, DType::I64),
                 &value, sizeof(value));
+}
+namespace {
+std::size_t checkedBufferByteCount(std::uint64_t count, DType dtype) {
+    std::size_t width = 0;
+    try { width = elementWidth(dtype); }
+    catch (const std::exception&) { fail("TH009-BUFFER-DTYPE"); }
+    if (count > std::numeric_limits<std::size_t>::max() / width)
+        fail("TH009-BUFFER-SIZE-OVERFLOW");
+    return static_cast<std::size_t>(count) * width;
+}
+void verifyBuffer(DType dtype, std::uint64_t count, const StorageHandle& storage) {
+    if (!storage.valid() || storage.byteLength() != checkedBufferByteCount(count, dtype))
+        fail("TH009-BUFFER-DESCRIPTOR");
+}
+}
+HostBuffer::HostBuffer(DType dtype, std::uint64_t elementCount, StorageHandle storage)
+    : dtype_(dtype), elementCount_(elementCount), storage_(std::move(storage)) {
+    verifyBuffer(dtype_, elementCount_, storage_);
+}
+HostBuffer HostBuffer::emptyU8() { return HostBuffer(DType::U8, 0, allocate(0)); }
+HostBuffer HostBuffer::materializeU8(const std::vector<std::uint8_t>& values) {
+    auto storage = allocate(checkedBufferByteCount(values.size(), DType::U8));
+    if (!values.empty())
+        std::memcpy(storage.object_->bytes.data(), values.data(), values.size());
+    return HostBuffer(DType::U8, values.size(), std::move(storage));
+}
+HostBuffer HostBuffer::allocateMetadata(DType dtype, std::uint64_t elementCount) {
+    return HostBuffer(dtype, elementCount, allocate(checkedBufferByteCount(elementCount, dtype)));
+}
+std::uint8_t HostBuffer::loadU8(std::uint64_t index) const {
+    verifyBuffer(dtype_, elementCount_, storage_);
+    if (dtype_ != DType::U8) fail("TH009-BUFFER-DTYPE-EXECUTION-DEFERRED");
+    if (index >= elementCount_) fail("TH009-BUFFER-BOUNDS");
+    std::uint8_t value = 0;
+    std::memcpy(&value, storage_.object_->bytes.data() + static_cast<std::size_t>(index), 1);
+    return value;
+}
+void MutableHostBufferRef::storeU8(std::uint64_t index, std::uint8_t value) {
+    verifyBuffer(buffer_.dtype_, buffer_.elementCount_, buffer_.storage_);
+    if (buffer_.dtype_ != DType::U8) fail("TH009-BUFFER-DTYPE-EXECUTION-DEFERRED");
+    if (index >= buffer_.elementCount_) fail("TH009-BUFFER-BOUNDS");
+    std::memcpy(buffer_.storage_.object_->bytes.data() + static_cast<std::size_t>(index), &value, 1);
+}
+HostBuffer HostBuffer::deepCopy() const {
+    verifyBuffer(dtype_, elementCount_, storage_);
+    auto copied = allocate(storage_.byteLength());
+    if (storage_.byteLength() != 0)
+        std::memcpy(copied.object_->bytes.data(), storage_.object_->bytes.data(), storage_.byteLength());
+    return HostBuffer(dtype_, elementCount_, std::move(copied));
+}
+std::string HostBuffer::debug() const {
+    verifyBuffer(dtype_, elementCount_, storage_);
+    std::ostringstream out;
+    out << "buffer " << dtypeName(dtype_) << " count=" << elementCount_
+        << " storage=" << storageId().value;
+    if (dtype_ == DType::U8) {
+        out << " values=[";
+        for (std::uint64_t i = 0; i < elementCount_; ++i) {
+            if (i) out << ',';
+            out << static_cast<unsigned>(loadU8(i));
+        }
+        out << ']';
+    }
+    return out.str();
 }
 Tensor Tensor::select(const std::vector<Selector>& selectors) const {
     verifyDescriptor(descriptor_);

@@ -13,7 +13,7 @@
 namespace thiran::v0::storage {
 
 struct StorageObjectId { std::uint64_t value = 0; bool operator==(const StorageObjectId&) const = default; };
-enum class DType { Bool, I32, I64, U32, U64, F32, F64, Invalid };
+enum class DType { Bool, U8, I32, I64, U32, U64, F32, F64, Invalid };
 std::size_t elementWidth(DType);
 std::string dtypeName(DType);
 DType fromSemantic(semantic::TypeKind);
@@ -30,6 +30,8 @@ private:
     std::shared_ptr<StorageObject> object_;
     friend class Tensor;
     friend class MutableTensorRef;
+    friend class HostBuffer;
+    friend class MutableHostBufferRef;
     friend class ResourceStorageBridge;
     friend StorageHandle allocate(std::size_t);
 };
@@ -93,6 +95,41 @@ public:
     void storeI64(const std::vector<std::uint64_t>& indices, std::int64_t value);
 private:
     Tensor tensor_; // Retains bytes even if the C++ wrapper used to obtain it expires.
+};
+
+// Buffer is a semantically distinct one-dimensional collection, not a Tensor
+// descriptor with rank one. It shares only the retained byte-storage substrate.
+class HostBuffer {
+public:
+    static HostBuffer emptyU8();
+    static HostBuffer materializeU8(const std::vector<std::uint8_t>& values);
+    static HostBuffer allocateMetadata(DType dtype, std::uint64_t elementCount);
+    DType dtype() const { return dtype_; }
+    std::uint64_t elementCount() const { return elementCount_; }
+    StorageObjectId storageId() const { return storage_.id(); }
+    std::uint8_t loadU8(std::uint64_t index) const;
+    HostBuffer deepCopy() const;
+    std::string debug() const;
+private:
+    HostBuffer(DType dtype, std::uint64_t elementCount, StorageHandle storage);
+    DType dtype_ = DType::Invalid;
+    std::uint64_t elementCount_ = 0;
+    StorageHandle storage_;
+    friend class MutableHostBufferRef;
+};
+
+// Requires a prior TH-006 exclusivity proof. This low-level wrapper is not a
+// safe-source mutable byte escape hatch and is deliberately move-only.
+class MutableHostBufferRef {
+public:
+    explicit MutableHostBufferRef(HostBuffer& buffer) : buffer_(buffer) {}
+    MutableHostBufferRef(const MutableHostBufferRef&) = delete;
+    MutableHostBufferRef& operator=(const MutableHostBufferRef&) = delete;
+    MutableHostBufferRef(MutableHostBufferRef&&) = default;
+    MutableHostBufferRef& operator=(MutableHostBufferRef&&) = default;
+    void storeU8(std::uint64_t index, std::uint8_t value);
+private:
+    HostBuffer buffer_;
 };
 
 std::vector<std::uint64_t> broadcastShape(const std::vector<std::uint64_t>&,

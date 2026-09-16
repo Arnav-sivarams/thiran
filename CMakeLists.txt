@@ -21,6 +21,22 @@ configure_file(
     @ONLY
 )
 
+# Convert trusted CMake toolchain flags into C++ argv elements at configure
+# time. The developer driver never parses a shell command string at runtime.
+separate_arguments(THIRAN_V0_HOST_ARGUMENT_LIST NATIVE_COMMAND
+    "${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}")
+set(THIRAN_V0_HOST_ARGUMENTS_CPP "")
+foreach(THIRAN_V0_HOST_ARGUMENT IN LISTS THIRAN_V0_HOST_ARGUMENT_LIST)
+    string(REPLACE "\\" "\\\\" THIRAN_V0_HOST_ARGUMENT_ESCAPED "${THIRAN_V0_HOST_ARGUMENT}")
+    string(REPLACE "\"" "\\\"" THIRAN_V0_HOST_ARGUMENT_ESCAPED "${THIRAN_V0_HOST_ARGUMENT_ESCAPED}")
+    string(APPEND THIRAN_V0_HOST_ARGUMENTS_CPP "\"${THIRAN_V0_HOST_ARGUMENT_ESCAPED}\",")
+endforeach()
+configure_file(
+    include/tooling/v0/BuildConfig.hpp.in
+    generated/tooling/v0/BuildConfig.hpp
+    @ONLY
+)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -37,6 +53,8 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/semantic/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/analysis/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/storage/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/backend/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/interop/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/tooling/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -59,6 +77,21 @@ target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis)
 
 add_library(thiran_v0_native_cpu STATIC src/backend/v0/NativeCpu.cpp)
 target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_storage)
+
+add_library(thiran_v0_interop STATIC src/interop/v0/NativeLibrary.cpp)
+target_link_libraries(thiran_v0_interop PUBLIC thiran_v0_analysis)
+
+add_library(thiran_v0_tooling STATIC
+    src/tooling/v0/Process.cpp
+    src/tooling/v0/Driver.cpp)
+target_link_libraries(thiran_v0_tooling PUBLIC thiran_v0_native_cpu thiran_v0_interop)
+
+add_executable(thiran-v0 src/tooling/v0/Main.cpp)
+target_link_libraries(thiran-v0 PRIVATE thiran_v0_tooling)
+target_compile_definitions(thiran-v0 PRIVATE
+    TH009_CXX="${CMAKE_CXX_COMPILER}"
+    TH009_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+    TH009_BUILD="${CMAKE_BINARY_DIR}")
 
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
@@ -99,6 +132,31 @@ if(BUILD_TESTING)
         TH008_INCLUDE="${CMAKE_SOURCE_DIR}/include"
         TH008_BUILD="${CMAKE_BINARY_DIR}")
     add_test(NAME V0NativeCpuTests COMMAND v0_native_cpu_tests)
+
+    add_executable(v0_buffer_tests tests/storage/v0/BufferTests.cpp)
+    target_link_libraries(v0_buffer_tests PRIVATE thiran_v0_storage)
+    add_test(NAME V0BufferTests COMMAND v0_buffer_tests)
+
+    add_library(thiran_v0_test_native STATIC tests/interop/v0/TestNativeLibrary.cpp)
+    add_executable(v0_interop_tests tests/interop/v0/InteropTests.cpp)
+    target_link_libraries(v0_interop_tests PRIVATE thiran_v0_tooling)
+    target_compile_definitions(v0_interop_tests PRIVATE
+        TH009_CXX="${CMAKE_CXX_COMPILER}"
+        TH009_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH009_BUILD="${CMAKE_BINARY_DIR}"
+        TH009_TEST_ARCHIVE="$<TARGET_FILE:thiran_v0_test_native>")
+    add_dependencies(v0_interop_tests thiran_v0_test_native)
+    add_test(NAME V0InteropTests COMMAND v0_interop_tests)
+
+    add_executable(v0_tooling_tests tests/tooling/v0/ToolingTests.cpp)
+    target_link_libraries(v0_tooling_tests PRIVATE thiran_v0_tooling)
+    target_compile_definitions(v0_tooling_tests PRIVATE
+        TH009_CXX="${CMAKE_CXX_COMPILER}"
+        TH009_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH009_BUILD="${CMAKE_BINARY_DIR}"
+        TH009_CLI="$<TARGET_FILE:thiran-v0>")
+    add_dependencies(v0_tooling_tests thiran-v0)
+    add_test(NAME V0ToolingTests COMMAND v0_tooling_tests)
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
