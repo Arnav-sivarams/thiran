@@ -117,6 +117,9 @@ int main() {
     auto matmul=source("fn main() -> Tensor<i64,2> {\nlet A=[1,2;3,4]\nreturn A * A\n}");
     auto rm=extract(matmul); require(!rm.ok()&&rm.diagnostic.find("BACKEND-UNSUPPORTED")!=std::string::npos&&
         rm.coverage.find("unsupported-native")!=std::string::npos,"N13 matmul not strict-native unsupported");
+    auto f32=source("fn f(x: f32) -> f32 { return x*x }");
+    auto rf32=extract(f32,"f",false); require(!rf32.ok()&&rf32.diagnostic.find("BACKEND-UNSUPPORTED")!=std::string::npos&&
+        rf32.coverage.find("fallback: NONE")!=std::string::npos,"TH010 f32 was native-admitted or gained fallback");
     auto cf=source("fn main() -> i64 {\nif true { return 1 } else { return 2 }\n}");
     auto rcf=extract(cf); require(!rcf.ok()&&rcf.diagnostic.find("BACKEND-UNSUPPORTED")!=std::string::npos,
         "N14 structured control not strict-native unsupported");

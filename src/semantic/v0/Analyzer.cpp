@@ -19,8 +19,10 @@ struct Located { ValueId id; Fact fact; };
 struct Local { BindingId id; Fact fact; bool mutableBinding; };
 bool isTensor(const Type& t) { return t.kind == TypeKind::Tensor; }
 bool i64(const Type& t) { return t == scalar(TypeKind::I64); }
-bool numeric(const Type& t) { return i64(t) || (isTensor(t) && t.elements.size()==1 &&
-    t.elements[0]==scalar(TypeKind::I64) && (t.rank==1 || t.rank==2)); }
+bool f32(const Type& t) { return t == scalar(TypeKind::F32); }
+bool numeric(const Type& t) { return i64(t) || f32(t) || (isTensor(t) && t.elements.size()==1 &&
+    (t.elements[0]==scalar(TypeKind::I64) || t.elements[0]==scalar(TypeKind::F32)) && (t.rank==1 || t.rank==2)); }
+Type scalarDtype(const Type& t) { return isTensor(t) ? t.elements.at(0) : t; }
 std::optional<std::int64_t> checked(char op, std::int64_t a, std::int64_t b) {
     std::int64_t result;
     bool overflow = op == '+' ? __builtin_add_overflow(a,b,&result) :
@@ -170,9 +172,11 @@ private:
         nextValue_=savedValue; nextBinding_=savedBinding; nextBlock_=savedBlock;
     }
     Located emit(BlockContext& c, Instruction i, Fact fact) {
-        if (i.op==Op::Negate || i.op==Op::Add || i.op==Op::Subtract || i.op==Op::Multiply ||
-            i.op==Op::ElementMultiply || i.op==Op::Matmul || i.op==Op::Index || i.op==Op::Slice ||
-            i.op==Op::Sum || i.op==Op::Call) i.effect=EffectClass::CheckedFailure;
+        const auto dt=scalarDtype(fact.type);
+        if (i.op==Op::Index || i.op==Op::Slice || i.op==Op::Call ||
+            (dt==scalar(TypeKind::I64) && (i.op==Op::Negate || i.op==Op::Add || i.op==Op::Subtract ||
+             i.op==Op::Multiply || i.op==Op::ElementMultiply || i.op==Op::Matmul || i.op==Op::Sum)))
+            i.effect=EffectClass::CheckedFailure;
         i.id = nextValue_++;
         i.type = fact.type; i.shape = fact.shape;
         if (fact.constant && fact.type==scalar(TypeKind::I64) &&
@@ -242,7 +246,7 @@ private:
                 }
                 auto v=expr(*n.operand,c);
                 if (!numeric(v.fact.type))
-                    fail(e.span,"TH005-OPERAND-TYPE","unary minus requires i64 scalar/tensor");
+                    fail(e.span,"TH005-OPERAND-TYPE","unary minus requires an exact supported numeric scalar/tensor");
                 std::optional<std::int64_t> constant;
                 if (v.fact.constant) {
                     if (*v.fact.constant==std::numeric_limits<std::int64_t>::min()) fail(e.span,"TH-SPEC-I64-OVERFLOW","constant negation overflows i64");
@@ -254,8 +258,9 @@ private:
             else if constexpr (std::is_same_v<N, CallExpr>) return call(e,n,c);
             else if constexpr (std::is_same_v<N, MemberExpr>) {
                 auto v=expr(*n.object,c);
-                if (n.member!="T" || !isTensor(v.fact.type) || v.fact.type.rank!=2 || v.fact.type.elements[0]!=scalar(TypeKind::I64))
-                    fail(e.span,"TH005-UNSUPPORTED-MEMBER","only rank-2 i64 tensor .T is supported");
+                if (n.member!="T" || !isTensor(v.fact.type) || v.fact.type.rank!=2 ||
+                    (v.fact.type.elements[0]!=scalar(TypeKind::I64) && v.fact.type.elements[0]!=scalar(TypeKind::F32)))
+                    fail(e.span,"TH005-UNSUPPORTED-MEMBER","only rank-2 i64/f32 tensor .T is supported");
                 auto shape=v.fact.shape; std::swap(shape.extents[0],shape.extents[1]);
                 Instruction i; i.op=Op::Transpose; i.span=e.span; i.operands={v.id}; i.borrowedView=true;
                 return emit(c,std::move(i),{v.fact.type,shape,{}});
@@ -268,8 +273,9 @@ private:
             fail(e.span,"TH005-DIVISION-UNSPECIFIED","exact integer division semantics are deferred");
         auto a=expr(*n.left,c), b=expr(*n.right,c);
         bool at=isTensor(a.fact.type), bt=isTensor(b.fact.type);
-        if (!numeric(a.fact.type) || !numeric(b.fact.type))
-            fail(e.span,"TH005-OPERAND-TYPE","binary numerical operands must have exact i64 dtype");
+        if (!numeric(a.fact.type) || !numeric(b.fact.type) || scalarDtype(a.fact.type)!=scalarDtype(b.fact.type))
+            fail(e.span,"TH005-OPERAND-TYPE","binary numerical operands must have the same exact supported dtype");
+        const auto dtype=scalarDtype(a.fact.type);
         Op op= n.op==TokenKind::Plus ? Op::Add : n.op==TokenKind::Minus ? Op::Subtract :
                n.op==TokenKind::DotStar ? Op::ElementMultiply : Op::Multiply;
         if (op==Op::Multiply && at && bt) {
@@ -278,13 +284,13 @@ private:
             if (left && right && *left!=*right) fail(e.span,"TH-SPEC-SHAPE","known matmul inner dimensions disagree");
             if (!left || !right) check(c,CheckKind::MatmulShape,{a.id,b.id},e.span,"TH-SPEC-SHAPE");
             Instruction i; i.op=Op::Matmul; i.span=e.span; i.operands={a.id,b.id};
-            return emit(c,std::move(i),{tensor(scalar(TypeKind::I64),2),{{a.fact.shape.extents[0],b.fact.shape.extents[1]}},{}});
+            return emit(c,std::move(i),{tensor(dtype,2),{{a.fact.shape.extents[0],b.fact.shape.extents[1]}},{}});
         }
         ShapeFact shape;
-        Type type=scalar(TypeKind::I64);
+        Type type=dtype;
         if (at || bt) {
             auto rank=std::max(at ? a.fact.type.rank : 0U, bt ? b.fact.type.rank : 0U);
-            type=tensor(scalar(TypeKind::I64),rank);
+            type=tensor(dtype,rank);
             shape.extents.resize(rank);
             bool needsCheck=false;
             for (std::size_t d=0; d<rank; ++d) {
@@ -304,7 +310,7 @@ private:
             if (op==Op::Multiply) op=Op::ElementMultiply;
         }
         std::optional<std::int64_t> constant;
-        if (!at && !bt && a.fact.constant && b.fact.constant) {
+        if (dtype==scalar(TypeKind::I64) && !at && !bt && a.fact.constant && b.fact.constant) {
             char operation=op==Op::Add?'+':op==Op::Subtract?'-':'*';
             constant=checked(operation,*a.fact.constant,*b.fact.constant);
             if (!constant) fail(e.span,"TH-SPEC-I64-OVERFLOW","constant arithmetic overflows i64");
@@ -319,14 +325,22 @@ private:
             if (n.arguments.size()!=2) fail(e.span,"TH005-ARITY","sum expects two arguments");
             auto a=expr(*n.arguments[0],c), axis=expr(*n.arguments[1],c);
             if (!isTensor(a.fact.type) || !numeric(a.fact.type) || !i64(axis.fact.type))
-                fail(e.span,"TH005-ARGUMENT-TYPE","sum requires i64 tensor and i64 axis");
+                fail(e.span,"TH005-ARGUMENT-TYPE","sum requires a supported numeric tensor and i64 axis");
             if (!axis.fact.constant) fail(e.span,"TH005-DYNAMIC-AXIS","sum axis must be compile-time constant in TH-005");
             if (*axis.fact.constant<0 || *axis.fact.constant>=a.fact.type.rank) fail(e.span,"TH-SPEC-AXIS","sum axis is out of rank");
-            Type type=a.fact.type.rank==1 ? scalar(TypeKind::I64) : tensor(scalar(TypeKind::I64),a.fact.type.rank-1);
+            Type type=a.fact.type.rank==1 ? a.fact.type.elements[0] : tensor(a.fact.type.elements[0],a.fact.type.rank-1);
             ShapeFact shape=a.fact.shape;
             shape.extents.erase(shape.extents.begin()+*axis.fact.constant);
             Instruction i; i.op=Op::Sum; i.span=e.span; i.operands={a.id,axis.id}; i.axis=static_cast<std::uint32_t>(*axis.fact.constant);
             return emit(c,std::move(i),{type,shape,{}});
+        }
+        if (name->name=="stop_gradient") {
+            if (n.arguments.size()!=1) fail(e.span,"TH005-ARITY","stop_gradient expects one argument");
+            auto value=expr(*n.arguments[0],c);
+            if (!differentiableType(value.fact.type))
+                fail(e.span,"TH010-STOP-GRADIENT-TYPE","stop_gradient requires an f32 scalar or rank-1/2 f32 tensor");
+            Instruction i; i.op=Op::StopGradient; i.span=e.span; i.operands={value.id};
+            return emit(c,std::move(i),value.fact);
         }
         auto it=names_.find(name->name);
         if (it==names_.end()) fail(e.span,"TH005-UNKNOWN-FUNCTION","unknown function " + name->name);

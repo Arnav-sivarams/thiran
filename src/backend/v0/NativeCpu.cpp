@@ -180,6 +180,7 @@ NativeResult extractStrictNative(const semantic::Module& m,const analysis::Owner
         RegionNode n; n.id=i.id; n.type=i.type; n.shape=i.shape; n.span=i.span; n.dependencies=i.operands;
         switch(i.op) {
             case semantic::Op::Integer: n.op=RegionOp::Integer; n.integer=i.integer; break;
+            case semantic::Op::Float: return fail("f32 lowering deferred","Float");
             case semantic::Op::TensorLiteral: n.op=RegionOp::TensorLiteral; break;
             case semantic::Op::LoadBinding:
                 if(!bindings.contains(i.binding)) return fail("unknown binding");
@@ -205,6 +206,10 @@ NativeResult extractStrictNative(const semantic::Module& m,const analysis::Owner
             case semantic::Op::Slice: return fail("Slice lowering deferred","Slice");
             case semantic::Op::Transpose: return fail("Transpose lowering deferred","Transpose");
             case semantic::Op::Sum: return fail("Sum lowering deferred","Sum");
+            case semantic::Op::StopGradient: return fail("AD stop-gradient lowering deferred","StopGradient");
+            case semantic::Op::ZeroLike: return fail("AD helper lowering deferred","ZeroLike");
+            case semantic::Op::ReduceToShape: return fail("AD helper lowering deferred","ReduceToShape");
+            case semantic::Op::BroadcastToShape: return fail("AD helper lowering deferred","BroadcastToShape");
             case semantic::Op::Call: return fail("Call lowering deferred","Call");
             default: return fail("operation "+std::to_string(static_cast<int>(i.op)),"Unsupported");
         }

@@ -26,11 +26,13 @@ Type tensor(Type element, std::uint32_t rank);
 std::string typeName(const Type&);
 bool validType(const Type&);
 bool executableType(const Type&);
+bool differentiableType(const Type&);
 struct ShapeFact { std::vector<std::optional<std::int64_t>> extents; bool operator==(const ShapeFact&) const = default; };
 enum class EffectClass { Pure, CheckedFailure, Mutation, Rng, Io, Transfer, Async };
 enum class AccessMode { Read, MutableBorrow, Consume };
-enum class Op { Integer, Boolean, LoadBinding, TensorLiteral, Tuple, Copy, Move, MutableBorrow,
-                Negate, Add, Subtract, Multiply, ElementMultiply, Matmul, Index, Slice, Transpose, Sum, Call };
+enum class Op { Integer, Float, Boolean, LoadBinding, TensorLiteral, Tuple, Copy, Move, MutableBorrow,
+                Negate, Add, Subtract, Multiply, ElementMultiply, Matmul, Index, Slice, Transpose, Sum,
+                StopGradient, ZeroLike, ReduceToShape, BroadcastToShape, Call };
 enum class CheckKind { Bounds, Broadcast, MatmulShape, Slice };
 struct Selector {
     bool slice = false;
@@ -45,6 +47,7 @@ struct Instruction {
     std::vector<ValueId> operands;
     std::vector<Selector> selectors;
     std::optional<std::int64_t> integer;
+    std::optional<float> floating;
     std::optional<bool> boolean;
     FunctionId callee = 0;
     BindingId binding = 0;
@@ -94,6 +97,9 @@ struct Function {
     std::vector<ParameterValue> parameters;
     Type result;
     Block body;
+    bool generated = false;
+    FunctionId sourceFunction = 0;
+    std::string generatedRole;
 };
 struct Import { std::string path, alias; SourceSpan span; };
 struct Module {

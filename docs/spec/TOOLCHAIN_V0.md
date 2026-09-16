@@ -17,6 +17,8 @@ The driver does not contain a parser, checker, ownership analysis, extractor, or
 
 `checkSource` ends after the ownership fact audit. Native coverage is deliberately not a condition of language correctness. Consequently a valid MatMul program passes `check` and fails native extraction/build with `BACKEND-UNSUPPORTED`, `MatMul unsupported-native`, and `fallback: NONE`.
 
+TH-010 f32 source accepted by the semantic/effect stages is likewise meaningful to `check`. The current TensorRegion/native path may reject f32, `stop_gradient`, generated gradient programs, and generated AD helper operations as `BACKEND-UNSUPPORTED` with `fallback: NONE`. TH-010 adds a C++ reference VJP/grad API but no production or developer CLI `grad` command.
+
 ## Developer commands
 
 ```text

@@ -24,12 +24,17 @@ int main() {
     fs::path dir=pattern;
     const std::string add="fn main() -> Tensor<i64,2> {\nlet A=[1,2;3,4]\nlet B=[5,6;7,8]\nreturn A + B\n}\n";
     const std::string matmul="fn main() -> Tensor<i64,2> {\nlet A=[1,2;3,4]\nreturn A * A\n}\n";
+    const std::string f32="fn main(x: f32) -> f32 { return x*x }\n";
     fs::path supported=dir/"source with spaces.th", unsupported=dir/"matmul.th";
     fs::path meta=dir/"literal;dollar$(not-run).th";
     write(supported,add); write(unsupported,matmul); write(meta,add);
     t::CompilerDriver driver(config());
     auto checked=driver.checkSource({supported.string(),add}); assert(checked.success); // CLI02
     auto matChecked=driver.checkSource({unsupported.string(),matmul}); assert(matChecked.success); // CLI03
+    auto f32Checked=driver.checkSource({"f32.th",f32}); assert(f32Checked.success);
+    auto f32Build=driver.buildNative({"f32.th",f32},{"main",dir/"f32-bad",{}});
+    assert(!f32Build.success && f32Build.stage==t::CompilerStage::Backend &&
+           f32Build.coverage.find("fallback: NONE")!=std::string::npos);
     auto matBuild=driver.buildNative({unsupported.string(),matmul},{"main",dir/"bad",{}});
     assert(!matBuild.success && matBuild.stage==t::CompilerStage::Backend &&
            matBuild.coverage.find("MatMul unsupported-native")!=std::string::npos &&

@@ -1,7 +1,10 @@
 #include "semantic/v0/Evaluator.hpp"
 #include "semantic/v0/Verifier.hpp"
 #include <algorithm>
+#include <cfenv>
+#include <cmath>
 #include <functional>
+#include <iomanip>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -40,6 +43,10 @@ std::int64_t integerValue(const RuntimeValue& v) {
     if (auto* x=std::get_if<std::int64_t>(&v.data)) return *x;
     fail("TH005-RUNTIME-TYPE");
 }
+float floatValue(const RuntimeValue& v) {
+    if (auto* x=std::get_if<float>(&v.data)) return *x;
+    fail("TH005-RUNTIME-TYPE");
+}
 std::vector<std::int64_t> coordinates(std::size_t flat,const std::vector<std::int64_t>& shape) {
     std::vector<std::int64_t> result(shape.size());
     for (std::size_t d=shape.size();d-- > 0;) {
@@ -76,9 +83,37 @@ std::int64_t elementAt(const RuntimeValue& v,const std::vector<std::int64_t>& ou
         coordinate[d]=t.shape[d]==1?0:outputCoordinate[outputRank-t.shape.size()+d];
     return t.values.at(offset(coordinate,t.shape));
 }
+float floatElementAt(const RuntimeValue& v,const std::vector<std::int64_t>& outputCoordinate,std::size_t outputRank) {
+    if (auto* x=std::get_if<float>(&v.data)) return *x;
+    const auto& t=tensorValue(v);
+    if (t.dtype!=TypeKind::F32) fail("TH005-RUNTIME-TYPE");
+    std::vector<std::int64_t> coordinate(t.shape.size());
+    for (std::size_t d=0;d<t.shape.size();++d)
+        coordinate[d]=t.shape[d]==1?0:outputCoordinate[outputRank-t.shape.size()+d];
+    return t.f32Values.at(offset(coordinate,t.shape));
+}
 RuntimeValue elementwise(const RuntimeValue& a,const RuntimeValue& b,char op) {
     auto shape=broadcastShape(a,b);
-    if (shape.empty()) return RuntimeValue{checked(op,integerValue(a),integerValue(b))};
+    const bool floating=std::holds_alternative<float>(a.data) || std::holds_alternative<float>(b.data) ||
+        (std::holds_alternative<RuntimeTensor>(a.data) && tensorValue(a).dtype==TypeKind::F32) ||
+        (std::holds_alternative<RuntimeTensor>(b.data) && tensorValue(b).dtype==TypeKind::F32);
+    if (shape.empty()) {
+        if (floating) {
+            auto x=floatValue(a),y=floatValue(b);
+            return RuntimeValue{op=='+'?x+y:op=='-'?x-y:x*y};
+        }
+        return RuntimeValue{checked(op,integerValue(a),integerValue(b))};
+    }
+    if (floating) {
+        RuntimeTensor result{TypeKind::F32,shape,{},{}};
+        auto size=count(shape); result.f32Values.reserve(size);
+        for (std::size_t flat=0;flat<size;++flat) {
+            auto coordinate=coordinates(flat,shape);
+            auto x=floatElementAt(a,coordinate,shape.size()),y=floatElementAt(b,coordinate,shape.size());
+            result.f32Values.push_back(op=='+'?x+y:op=='-'?x-y:x*y);
+        }
+        return RuntimeValue{std::move(result)};
+    }
     RuntimeTensor result{TypeKind::I64,shape,{}};
     auto size=count(shape); result.values.reserve(size);
     for (std::size_t flat=0;flat<size;++flat) {
@@ -90,7 +125,22 @@ RuntimeValue elementwise(const RuntimeValue& a,const RuntimeValue& b,char op) {
 RuntimeValue matmul(const RuntimeValue& a,const RuntimeValue& b) {
     const auto& x=tensorValue(a); const auto& y=tensorValue(b);
     if (x.shape.size()!=2 || y.shape.size()!=2 || x.shape[1]!=y.shape[0]) fail("TH-SPEC-SHAPE");
-    RuntimeTensor result{TypeKind::I64,{x.shape[0],y.shape[1]},std::vector<std::int64_t>(count({x.shape[0],y.shape[1]}),0)};
+    if (x.dtype!=y.dtype) fail("TH005-RUNTIME-TYPE");
+    if (x.dtype==TypeKind::F32) {
+        RuntimeTensor result{TypeKind::F32,{x.shape[0],y.shape[1]},{},
+            std::vector<float>(count({x.shape[0],y.shape[1]}),0.0f)};
+        for (std::int64_t i=0;i<x.shape[0];++i) for (std::int64_t j=0;j<y.shape[1];++j) {
+            float accumulator=0.0f;
+            for (std::int64_t k=0;k<x.shape[1];++k) {
+                volatile float product=x.f32Values.at(static_cast<std::size_t>(i*x.shape[1]+k))*
+                    y.f32Values.at(static_cast<std::size_t>(k*y.shape[1]+j));
+                volatile float next=accumulator+product; accumulator=next;
+            }
+            result.f32Values[static_cast<std::size_t>(i*y.shape[1]+j)]=accumulator;
+        }
+        return RuntimeValue{std::move(result)};
+    }
+    RuntimeTensor result{TypeKind::I64,{x.shape[0],y.shape[1]},std::vector<std::int64_t>(count({x.shape[0],y.shape[1]}),0),{}};
     for (std::int64_t i=0;i<x.shape[0];++i) for (std::int64_t j=0;j<y.shape[1];++j) {
         std::int64_t accumulator=0;
         for (std::int64_t k=0;k<x.shape[1];++k) {
@@ -145,9 +195,16 @@ RuntimeValue indexed(const RuntimeValue& value,const Instruction& instruction,co
 }
 RuntimeValue transpose(const RuntimeValue& value) {
     const auto& t=tensorValue(value);
-    RuntimeTensor result{t.dtype,{t.shape[1],t.shape[0]},std::vector<std::int64_t>(t.values.size())};
-    for (std::int64_t i=0;i<t.shape[0];++i) for (std::int64_t j=0;j<t.shape[1];++j)
-        result.values[static_cast<std::size_t>(j*t.shape[0]+i)]=t.values.at(static_cast<std::size_t>(i*t.shape[1]+j));
+    RuntimeTensor result{t.dtype,{t.shape[1],t.shape[0]},{},{}};
+    if (t.dtype==TypeKind::F32) {
+        result.f32Values.resize(t.f32Values.size());
+        for (std::int64_t i=0;i<t.shape[0];++i) for (std::int64_t j=0;j<t.shape[1];++j)
+            result.f32Values[static_cast<std::size_t>(j*t.shape[0]+i)]=t.f32Values.at(static_cast<std::size_t>(i*t.shape[1]+j));
+    } else {
+        result.values.resize(t.values.size());
+        for (std::int64_t i=0;i<t.shape[0];++i) for (std::int64_t j=0;j<t.shape[1];++j)
+            result.values[static_cast<std::size_t>(j*t.shape[0]+i)]=t.values.at(static_cast<std::size_t>(i*t.shape[1]+j));
+    }
     return RuntimeValue{std::move(result)};
 }
 RuntimeValue sum(const RuntimeValue& value,std::uint32_t axis) {
@@ -155,6 +212,23 @@ RuntimeValue sum(const RuntimeValue& value,std::uint32_t axis) {
     if (axis>=t.shape.size()) fail("TH-SPEC-AXIS");
     std::vector<std::int64_t> shape=t.shape; shape.erase(shape.begin()+axis);
     auto outputSize=count(shape);
+    if (t.dtype==TypeKind::F32) {
+        if (shape.empty()) {
+            float acc=0.0f;
+            for (auto v:t.f32Values) acc=acc+v;
+            return RuntimeValue{acc};
+        }
+        RuntimeTensor result{TypeKind::F32,shape,{},std::vector<float>(outputSize,0.0f)};
+        for (std::size_t flat=0;flat<outputSize;++flat) {
+            auto out=coordinates(flat,shape); float acc=0.0f;
+            for (std::int64_t k=0;k<t.shape[axis];++k) {
+                auto source=out; source.insert(source.begin()+axis,k);
+                acc=acc+t.f32Values.at(offset(source,t.shape));
+            }
+            result.f32Values[flat]=acc;
+        }
+        return RuntimeValue{std::move(result)};
+    }
     if (shape.empty()) {
         std::int64_t acc=0;
         for (auto v:t.values) acc=checked('+',acc,v);
@@ -171,12 +245,72 @@ RuntimeValue sum(const RuntimeValue& value,std::uint32_t axis) {
     }
     return RuntimeValue{std::move(result)};
 }
+RuntimeValue zeroLike(const RuntimeValue& reference) {
+    if (std::holds_alternative<float>(reference.data)) return RuntimeValue{0.0f};
+    const auto& t=tensorValue(reference);
+    if (t.dtype!=TypeKind::F32) fail("TH005-RUNTIME-TYPE");
+    return RuntimeValue{RuntimeTensor{TypeKind::F32,t.shape,{},std::vector<float>(count(t.shape),0.0f)}};
+}
+RuntimeValue reduceToShape(const RuntimeValue& value,const RuntimeValue& reference) {
+    if (std::holds_alternative<float>(reference.data)) {
+        if (auto* x=std::get_if<float>(&value.data)) return RuntimeValue{*x};
+        const auto& source=tensorValue(value); if (source.dtype!=TypeKind::F32) fail("TH005-RUNTIME-TYPE");
+        float acc=0.0f; for (auto x:source.f32Values) acc=acc+x; return RuntimeValue{acc};
+    }
+    const auto& target=tensorValue(reference);
+    const auto& source=tensorValue(value);
+    if (target.dtype!=TypeKind::F32 || source.dtype!=TypeKind::F32 || target.shape.size()>source.shape.size()) fail("TH-SPEC-BROADCAST");
+    const auto delta=source.shape.size()-target.shape.size();
+    for (std::size_t d=0;d<target.shape.size();++d)
+        if (target.shape[d]!=1 && target.shape[d]!=source.shape[d+delta]) fail("TH-SPEC-BROADCAST");
+    RuntimeTensor result{TypeKind::F32,target.shape,{},std::vector<float>(count(target.shape),0.0f)};
+    for (std::size_t flat=0;flat<source.f32Values.size();++flat) {
+        auto sc=coordinates(flat,source.shape),tc=std::vector<std::int64_t>(target.shape.size());
+        for (std::size_t d=0;d<target.shape.size();++d) tc[d]=target.shape[d]==1?0:sc[d+delta];
+        result.f32Values[offset(tc,target.shape)]=result.f32Values[offset(tc,target.shape)]+source.f32Values[flat];
+    }
+    return RuntimeValue{std::move(result)};
+}
+RuntimeValue broadcastToShape(const RuntimeValue& value,const RuntimeValue& reference,std::uint32_t axis) {
+    if (std::holds_alternative<float>(reference.data)) {
+        if (!std::holds_alternative<float>(value.data)) fail("TH-SPEC-BROADCAST");
+        return value;
+    }
+    const auto& target=tensorValue(reference);
+    if (target.dtype!=TypeKind::F32) fail("TH005-RUNTIME-TYPE");
+    if (axis>=target.shape.size()) fail("TH-SPEC-AXIS");
+    if (auto* x=std::get_if<float>(&value.data)) {
+        if (target.shape.size()!=1) fail("TH-SPEC-BROADCAST");
+        RuntimeTensor result; result.dtype=TypeKind::F32;
+        for (auto extent:target.shape) result.shape.push_back(extent);
+        result.f32Values.assign(count(target.shape),*x);
+        return RuntimeValue{std::move(result)};
+    }
+    const auto& source=tensorValue(value);
+    if (source.dtype!=TypeKind::F32 || source.shape.size()+1!=target.shape.size()) fail("TH-SPEC-BROADCAST");
+    for (std::size_t targetAxis=0,sourceAxis=0;targetAxis<target.shape.size();++targetAxis) {
+        if (targetAxis==axis) continue;
+        if (source.shape[sourceAxis++]!=target.shape[targetAxis]) fail("TH-SPEC-BROADCAST");
+    }
+    RuntimeTensor result; result.dtype=TypeKind::F32;
+    for (auto extent:target.shape) result.shape.push_back(extent);
+    auto size=count(target.shape); result.f32Values.reserve(size);
+    for (std::size_t flat=0;flat<size;++flat) {
+        auto targetCoordinate=coordinates(flat,target.shape); std::vector<std::int64_t> sourceCoordinate;
+        sourceCoordinate.reserve(source.shape.size());
+        for (std::size_t d=0;d<targetCoordinate.size();++d) if (d!=axis) sourceCoordinate.push_back(targetCoordinate[d]);
+        result.f32Values.push_back(source.f32Values.at(offset(sourceCoordinate,source.shape)));
+    }
+    return RuntimeValue{std::move(result)};
+}
 bool runtimeType(const RuntimeValue& v,const Type& type) {
     if (type==scalar(TypeKind::I64)) return std::holds_alternative<std::int64_t>(v.data);
+    if (type==scalar(TypeKind::F32)) return std::holds_alternative<float>(v.data);
     if (type==scalar(TypeKind::Bool)) return std::holds_alternative<bool>(v.data);
     if (type.kind==TypeKind::Tensor) {
         auto* t=std::get_if<RuntimeTensor>(&v.data);
-        return t && t->dtype==type.elements[0].kind && t->shape.size()==type.rank && count(t->shape)==t->values.size();
+        return t && t->dtype==type.elements[0].kind && t->shape.size()==type.rank &&
+            count(t->shape)==(t->dtype==TypeKind::F32?t->f32Values.size():t->values.size());
     }
     if (type.kind==TypeKind::Tuple) {
         auto* tuple=std::get_if<RuntimeTuple>(&v.data);
@@ -284,6 +418,7 @@ private:
             RuntimeValue result;
             switch (i.op) {
                 case Op::Integer: result.data=*i.integer; break;
+                case Op::Float: result.data=*i.floating; break;
                 case Op::Boolean: result.data=*i.boolean; break;
                 case Op::LoadBinding: result=bindings.at(i.binding); break;
                 case Op::TensorLiteral: {
@@ -296,7 +431,11 @@ private:
                 case Op::Copy: case Op::Move: case Op::MutableBorrow: result=operand(0); break;
                 case Op::Negate: {
                     if (auto* x=std::get_if<std::int64_t>(&operand(0).data)) result.data=neg(*x);
-                    else { auto t=tensorValue(operand(0)); for (auto& v:t.values) v=neg(v); result.data=std::move(t); }
+                    else if (auto* x=std::get_if<float>(&operand(0).data)) result.data=-*x;
+                    else { auto t=tensorValue(operand(0));
+                        if (t.dtype==TypeKind::F32) for (auto& v:t.f32Values) v=-v;
+                        else for (auto& v:t.values) v=neg(v);
+                        result.data=std::move(t); }
                     break;
                 }
                 case Op::Add: result=elementwise(operand(0),operand(1),'+'); break;
@@ -306,6 +445,10 @@ private:
                 case Op::Index: case Op::Slice: result=indexed(operand(0),i,values); break;
                 case Op::Transpose: result=transpose(operand(0)); break;
                 case Op::Sum: result=sum(operand(0),i.axis); break;
+                case Op::StopGradient: result=operand(0); break;
+                case Op::ZeroLike: result=zeroLike(operand(0)); break;
+                case Op::ReduceToShape: result=reduceToShape(operand(0),operand(1)); break;
+                case Op::BroadcastToShape: result=broadcastToShape(operand(0),operand(1),i.axis); break;
                 case Op::Call: { std::vector<RuntimeValue> args; for (auto id:i.operands) args.push_back(values.at(id)); result=call(i.callee,args); break; }
             }
             if (!runtimeType(result,i.type)) fail("TH005-RUNTIME-TYPE");
@@ -316,6 +459,8 @@ private:
 };
 Observation guarded(const Module& module,const std::function<RuntimeValue(Evaluator&)>& action) {
     try {
+        if (sizeof(float)!=4 || !std::numeric_limits<float>::is_iec559 || std::fegetround()!=FE_TONEAREST)
+            return {false,{},"TH010-HOST-F32-UNSUPPORTED"};
         if (!verify(module).ok) return {false,{},"TH005-INVALID-IR"};
         Evaluator evaluator(module);
         return {true,action(evaluator),{}};
@@ -325,12 +470,22 @@ Observation guarded(const Module& module,const std::function<RuntimeValue(Evalua
 std::string valueFormat(const RuntimeValue& v) {
     std::ostringstream out;
     if (auto* x=std::get_if<std::int64_t>(&v.data)) out << "{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":" << *x << '}';
+    else if (auto* x=std::get_if<float>(&v.data)) {
+        out << "{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"f32\",\"value\":";
+        if (std::isnan(*x)) out << "\"nan\""; else if (std::isinf(*x)) out << (*x<0?"\"-inf\"":"\"inf\"");
+        else out << std::setprecision(std::numeric_limits<float>::max_digits10) << *x;
+        out << '}';
+    }
     else if (auto* b=std::get_if<bool>(&v.data)) out << "{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"bool\",\"value\":" << (*b?"true":"false") << '}';
     else if (auto* t=std::get_if<RuntimeTensor>(&v.data)) {
-        out << "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"i64\",\"shape\":[";
+        out << "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"" << (t->dtype==TypeKind::F32?"f32":"i64") << "\",\"shape\":[";
         for (std::size_t i=0;i<t->shape.size();++i) { if (i) out << ','; out << t->shape[i]; }
         out << "],\"values\":[";
-        for (std::size_t i=0;i<t->values.size();++i) { if (i) out << ','; out << t->values[i]; }
+        if (t->dtype==TypeKind::F32) for (std::size_t i=0;i<t->f32Values.size();++i) {
+            if (i) out << ','; auto x=t->f32Values[i];
+            if (std::isnan(x)) out << "\"nan\""; else if (std::isinf(x)) out << (x<0?"\"-inf\"":"\"inf\"");
+            else out << std::setprecision(std::numeric_limits<float>::max_digits10) << x;
+        } else for (std::size_t i=0;i<t->values.size();++i) { if (i) out << ','; out << t->values[i]; }
         out << "]}";
     } else {
         out << "{\"status\":\"ok\",\"kind\":\"tuple\",\"values\":[";

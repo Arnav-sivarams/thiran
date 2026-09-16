@@ -39,15 +39,21 @@ bool validType(const Type& t) {
     }
 }
 bool executableType(const Type& t) {
-    if (t == scalar(TypeKind::I64) || t == scalar(TypeKind::Bool)) return true;
-    if (t.kind == TypeKind::Tensor) return t.elements.size() == 1 && t.elements[0] == scalar(TypeKind::I64) && (t.rank == 1 || t.rank == 2);
+    if (t == scalar(TypeKind::I64) || t == scalar(TypeKind::F32) || t == scalar(TypeKind::Bool)) return true;
+    if (t.kind == TypeKind::Tensor) return t.elements.size() == 1 &&
+        (t.elements[0] == scalar(TypeKind::I64) || t.elements[0] == scalar(TypeKind::F32)) &&
+        (t.rank == 1 || t.rank == 2);
     if (t.kind == TypeKind::Tuple) { for (const auto& e : t.elements) if (!executableType(e)) return false; return true; }
     return false;
+}
+bool differentiableType(const Type& t) {
+    return t == scalar(TypeKind::F32) || (t.kind == TypeKind::Tensor && t.elements.size() == 1 &&
+        t.elements[0] == scalar(TypeKind::F32) && (t.rank == 1 || t.rank == 2));
 }
 namespace {
 std::string opName(Op op) {
     switch (op) {
-        case Op::Integer: return "integer"; case Op::Boolean: return "boolean";
+        case Op::Integer: return "integer"; case Op::Float: return "float"; case Op::Boolean: return "boolean";
         case Op::LoadBinding: return "load_binding";
         case Op::TensorLiteral: return "tensor_literal"; case Op::Tuple: return "tuple";
         case Op::Copy: return "copy"; case Op::Move: return "move";
@@ -57,6 +63,8 @@ std::string opName(Op op) {
         case Op::ElementMultiply: return "element_multiply"; case Op::Matmul: return "matmul";
         case Op::Index: return "index"; case Op::Slice: return "slice_view";
         case Op::Transpose: return "transpose_view"; case Op::Sum: return "sum";
+        case Op::StopGradient: return "stop_gradient"; case Op::ZeroLike: return "zero_like";
+        case Op::ReduceToShape: return "reduce_to_shape"; case Op::BroadcastToShape: return "broadcast_to_shape";
         case Op::Call: return "call";
     }
     return "invalid";
@@ -85,6 +93,7 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             out << indent << "%" << i->id << " = " << opName(i->op) << ':' << typeName(i->type);
             ids(out, i->operands); selectors(out, i->selectors);
             if (i->integer) out << " value=" << *i->integer;
+            if (i->floating) out << " value=" << *i->floating << 'f';
             if (i->boolean) out << " value=" << (*i->boolean ? "true" : "false");
             if (i->op == Op::Call) out << " @" << i->callee;
             if (i->op == Op::LoadBinding || i->op == Op::Move || i->op == Op::MutableBorrow) out << " $" << i->binding;
@@ -143,7 +152,9 @@ std::string dump(const Module& m) {
     out << "module\n";
     for (const auto& i : m.imports) out << "import " << i.path << " as " << i.alias << " unresolved\n";
     for (const auto& f : m.functions) {
-        out << "fn @" << f.id << ' ' << f.name << " -> " << typeName(f.result) << '\n';
+        out << "fn @" << f.id << ' ' << f.name << " -> " << typeName(f.result);
+        if (f.generated) out << " generated=" << f.generatedRole << " source=@" << f.sourceFunction;
+        out << '\n';
         for (const auto& p : f.parameters) out << "  param %" << p.id << " $" << p.binding << ' ' << p.name << ':' << typeName(p.type) << ' ' <<
             (p.access==AccessMode::Read?"read":p.access==AccessMode::MutableBorrow?"borrow_mut":"move") << '\n';
         block(out, f.body);

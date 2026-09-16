@@ -11,6 +11,8 @@ bool shapeOk(const Type& t,const ShapeFact& s) {
     for (auto x:s.extents) if (x && *x<0) return false;
     return true;
 }
+bool numericScalar(const Type& t) { return t==scalar(TypeKind::I64) || t==scalar(TypeKind::F32); }
+Type dtype(const Type& t) { return t.kind==TypeKind::Tensor && !t.elements.empty() ? t.elements[0] : t; }
 bool spanOk(const SourceSpan& s) {
     return s.begin.source!=frontend::invalidSourceId && s.begin.source==s.end.source &&
         s.begin.offset<=s.end.offset && s.begin.line>=1 && s.end.line>=1 &&
@@ -19,6 +21,7 @@ bool spanOk(const SourceSpan& s) {
 struct Slot { Type type; bool mutableBinding; };
 struct State { ValueId value=1; BindingId binding=1; BlockId block=1; std::set<const Block*> seen; };
 using Values=std::map<ValueId,Type>;
+using Shapes=std::map<ValueId,ShapeFact>;
 using Slots=std::map<BindingId,Slot>;
 bool returns(const Block& b) {
     if (b.returned) return true;
@@ -30,7 +33,7 @@ bool returns(const Block& b) {
     return false;
 }
 void inspect(const Module& m,const Block& b,const Function* fn,State& state,VerificationResult& r,
-             Values values,Slots slots,BlockId parent,unsigned loopDepth,bool induction=false,BindingId inductionId=0) {
+             Values values,Shapes shapes,Slots slots,BlockId parent,unsigned loopDepth,bool induction=false,BindingId inductionId=0) {
     if (!state.seen.insert(&b).second) { err(r,"duplicate nested block ownership/cycle"); return; }
     if (parent) {
         if (!b.id || b.id!=state.block++ || b.parent!=parent) err(r,"malformed nested block identity/parent");
@@ -134,24 +137,24 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
             if (s->kind==Structured::Kind::If) {
                 if (used(s->condition)!=scalar(TypeKind::Bool) || !s->thenBlock || s->bodyBlock || s->conditionBlock || s->conditionResult)
                     err(r,"If condition/region contract invalid");
-                if (s->thenBlock) inspect(m,*s->thenBlock,fn,state,r,values,slots,b.id,loopDepth);
-                if (s->elseBlock) inspect(m,*s->elseBlock,fn,state,r,values,slots,b.id,loopDepth);
+                if (s->thenBlock) inspect(m,*s->thenBlock,fn,state,r,values,shapes,slots,b.id,loopDepth);
+                if (s->elseBlock) inspect(m,*s->elseBlock,fn,state,r,values,shapes,slots,b.id,loopDepth);
             } else if (s->kind==Structured::Kind::ForRange) {
                 if (used(s->start)!=scalar(TypeKind::I64) || used(s->end)!=scalar(TypeKind::I64) ||
                     !s->bodyBlock || !s->induction || s->thenBlock || s->elseBlock || s->conditionBlock)
                     err(r,"ForRange bounds/body contract invalid");
-                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,slots,b.id,loopDepth+1,true,s->induction);
+                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,shapes,slots,b.id,loopDepth+1,true,s->induction);
             } else if (s->kind==Structured::Kind::While) {
                 if (!s->conditionBlock || !s->bodyBlock || !s->conditionResult || s->thenBlock || s->elseBlock)
                     err(r,"While structural regions invalid");
                 if (s->conditionBlock) {
-                    inspect(m,*s->conditionBlock,fn,state,r,values,slots,b.id,loopDepth);
+                    inspect(m,*s->conditionBlock,fn,state,r,values,shapes,slots,b.id,loopDepth);
                     bool found=false;
                     for (const auto& x:s->conditionBlock->steps) if (auto* i=std::get_if<Instruction>(&x);
                         i && i->id==s->conditionResult) { found=i->type==scalar(TypeKind::Bool); break; }
                     if (!found) err(r,"While condition result missing/non-bool");
                 }
-                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,slots,b.id,loopDepth+1);
+                if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,shapes,slots,b.id,loopDepth+1);
             } else err(r,"invalid structured kind");
             continue;
         }
@@ -165,6 +168,7 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
         auto require=[&](bool ok) { if (!ok) err(r,"instruction operand/result contract invalid"); };
         switch (i.op) {
             case Op::Integer: require(operands.empty() && i.integer && i.type==scalar(TypeKind::I64)); break;
+            case Op::Float: require(operands.empty() && i.floating && i.type==scalar(TypeKind::F32)); break;
             case Op::Boolean: require(operands.empty() && i.boolean && i.type==scalar(TypeKind::Bool)); break;
             case Op::LoadBinding: {
                 auto it=slots.find(i.binding); require(operands.empty() && it!=slots.end() && it->second.type==i.type); break;
@@ -182,19 +186,21 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                     (i.op!=Op::MutableBorrow || (it->second.mutableBinding &&
                         (i.type.kind==TypeKind::Tensor || i.type.kind==TypeKind::Buffer)))); break;
             }
-            case Op::Negate: require(operands.size()==1 && i.type==operands[0] && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool); break;
+            case Op::Negate: require(operands.size()==1 && i.type==operands[0] && executableType(i.type) && numericScalar(dtype(i.type))); break;
             case Op::Add: case Op::Subtract: case Op::Multiply: case Op::ElementMultiply: {
-                bool ok=operands.size()==2 && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool;
+                bool ok=operands.size()==2 && executableType(i.type) && numericScalar(dtype(i.type));
                 if (ok) {
                     bool a=operands[0].kind==TypeKind::Tensor,c=operands[1].kind==TypeKind::Tensor;
-                    ok &= (a || operands[0]==scalar(TypeKind::I64)) && (c || operands[1]==scalar(TypeKind::I64));
-                    ok &= i.type==(a||c?tensor(scalar(TypeKind::I64),std::max(a?operands[0].rank:0U,c?operands[1].rank:0U)):scalar(TypeKind::I64));
+                    auto dt=dtype(operands[0]);
+                    ok &= numericScalar(dt) && dtype(operands[1])==dt;
+                    ok &= i.type==(a||c?tensor(dt,std::max(a?operands[0].rank:0U,c?operands[1].rank:0U)):dt);
                     if (i.op==Op::Multiply) ok &= !a && !c;
                 }
                 require(ok); break;
             }
             case Op::Matmul: require(operands.size()==2 && operands[0].kind==TypeKind::Tensor && operands[1].kind==TypeKind::Tensor &&
-                operands[0].rank==2 && operands[1].rank==2 && i.type==tensor(scalar(TypeKind::I64),2)); break;
+                operands[0].rank==2 && operands[1].rank==2 && dtype(operands[0])==dtype(operands[1]) &&
+                numericScalar(dtype(operands[0])) && i.type==tensor(dtype(operands[0]),2)); break;
             case Op::Index: case Op::Slice: {
                 bool ok=operands.size()==1 && operands[0].kind==TypeKind::Tensor && i.selectors.size()<=operands[0].rank;
                 if (ok) {
@@ -208,7 +214,42 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
             }
             case Op::Transpose: require(operands.size()==1 && operands[0].kind==TypeKind::Tensor && operands[0].rank==2 && i.type==operands[0] && i.borrowedView); break;
             case Op::Sum: require(operands.size()==2 && operands[0].kind==TypeKind::Tensor && operands[1]==scalar(TypeKind::I64) &&
-                i.axis<operands[0].rank && i.type==(operands[0].rank==1?scalar(TypeKind::I64):tensor(scalar(TypeKind::I64),operands[0].rank-1))); break;
+                i.axis<operands[0].rank && numericScalar(dtype(operands[0])) &&
+                i.type==(operands[0].rank==1?dtype(operands[0]):tensor(dtype(operands[0]),operands[0].rank-1))); break;
+            case Op::StopGradient: case Op::ZeroLike:
+                require(operands.size()==1 && differentiableType(operands[0]) && i.type==operands[0]); break;
+            case Op::ReduceToShape: {
+                bool ok=operands.size()==2 && differentiableType(operands[0]) && differentiableType(operands[1]) &&
+                    i.type==operands[1] && dtype(operands[0])==dtype(operands[1]) &&
+                    (operands[0].kind==TypeKind::Tensor || operands[1].kind!=TypeKind::Tensor) &&
+                    (operands[0].kind!=TypeKind::Tensor || operands[1].kind!=TypeKind::Tensor || operands[0].rank>=operands[1].rank);
+                if (ok) {
+                    const auto& source=shapes.at(i.operands[0]); const auto& target=shapes.at(i.operands[1]);
+                    ok &= i.shape==target;
+                    auto delta=source.extents.size()-target.extents.size();
+                    for (std::size_t d=0;d<target.extents.size();++d) if (source.extents[d+delta] && target.extents[d] &&
+                        *target.extents[d]!=1 && *target.extents[d]!=*source.extents[d+delta]) ok=false;
+                }
+                require(ok); break;
+            }
+            case Op::BroadcastToShape: {
+                bool ok=operands.size()==2 && differentiableType(operands[0]) && differentiableType(operands[1]) &&
+                    i.type==operands[1] && dtype(operands[0])==dtype(operands[1]) &&
+                    operands[1].kind==TypeKind::Tensor && i.axis<operands[1].rank &&
+                    ((operands[0].kind!=TypeKind::Tensor && operands[1].rank==1) ||
+                     (operands[0].kind==TypeKind::Tensor && operands[0].rank+1==operands[1].rank));
+                if (ok) {
+                    const auto& source=shapes.at(i.operands[0]); const auto& target=shapes.at(i.operands[1]);
+                    ok &= i.shape==target;
+                    for (std::size_t targetAxis=0,sourceAxis=0;targetAxis<target.extents.size();++targetAxis) {
+                        if (targetAxis==i.axis) continue;
+                        if (source.extents[sourceAxis] && target.extents[targetAxis] &&
+                            *source.extents[sourceAxis]!=*target.extents[targetAxis]) ok=false;
+                        ++sourceAxis;
+                    }
+                }
+                require(ok); break;
+            }
             case Op::Call: {
                 if (!i.callee || i.callee>m.functions.size()) { err(r,"invalid function target"); break; }
                 const auto& target=m.functions[i.callee-1];
@@ -223,6 +264,7 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
             }
         }
         values.emplace(i.id,i.type);
+        shapes.emplace(i.id,i.shape);
     }
     if (b.returned && (!fn || used(*b.returned)!=fn->result)) err(r,"block Return type mismatch");
 }
@@ -233,7 +275,9 @@ VerificationResult verify(const Module& m) {
         const auto& f=m.functions[k];
         if (f.id!=k+1 || !names.insert(f.name).second) err(r,"FunctionId/name invalid");
         if (!validType(f.result)) err(r,"function result type invalid");
-        State state; Values values; Slots slots;
+        if (f.generated && (!f.sourceFunction || (f.generatedRole!="forward" && f.generatedRole!="backward")))
+            err(r,"invalid generated function provenance");
+        State state; Values values; Shapes shapes; Slots slots;
         for (const auto& p:f.parameters) {
             if (!spanOk(p.span)) err(r,"parameter has invalid source provenance");
             if (p.id!=state.value++ || p.binding!=state.binding++ || values.contains(p.id) || slots.contains(p.binding))
@@ -243,12 +287,12 @@ VerificationResult verify(const Module& m) {
                 err(r,"invalid parameter access mode");
             if (p.access==AccessMode::MutableBorrow && p.type.kind!=TypeKind::Tensor && p.type.kind!=TypeKind::Buffer)
                 err(r,"mutable parameter access mode requires resource type");
-            values[p.id]=p.type; slots[p.binding]={p.type,p.access==AccessMode::MutableBorrow};
+            values[p.id]=p.type; shapes[p.id]=p.shape; slots[p.binding]={p.type,p.access==AccessMode::MutableBorrow};
         }
-        inspect(m,f.body,&f,state,r,values,slots,0,0);
+        inspect(m,f.body,&f,state,r,values,shapes,slots,0,0);
         if (!returns(f.body)) err(r,"function lacks return on some path");
     }
-    State init; inspect(m,m.initializer,nullptr,init,r,{}, {},0,0);
+    State init; inspect(m,m.initializer,nullptr,init,r,{}, {}, {},0,0);
     r.ok=r.errors.empty(); return r;
 }
 }

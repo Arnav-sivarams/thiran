@@ -127,6 +127,7 @@ public:
         for (const auto& p:fn.parameters) {
             bindingBlock_[p.binding]=fn.body.id;
             ResourceValue value=typedFresh(p.id,p.type,ProvenanceKind::Fresh);
+            if (resourceType(p.type)) value.sourceBinding=p.binding;
             values_[p.id]=value;
             state[p.binding]={BindingFact::Availability::DefinitelyAvailable,value,
                 p.access==AccessMode::MutableBorrow,p.span,{}};
@@ -254,7 +255,7 @@ private:
     void instruction(const Instruction& i,State& state) {
         ResourceValue value;
         switch (i.op) {
-            case Op::Integer: case Op::Boolean: break;
+            case Op::Integer: case Op::Float: case Op::Boolean: break;
             case Op::LoadBinding: {
                 if (!moveInputs_.contains(i.id)) requireAvailable(state,i.binding,i.span);
                 if (auto* f=binding(state,i.binding)) { value=f->value; value.sourceBinding=i.binding; }
@@ -264,10 +265,20 @@ private:
             case Op::TensorLiteral: value=fresh(i.id,ProvenanceKind::Fresh); break;
             case Op::Tuple: {
                 value.kind=ProvenanceKind::NoResource;
-                for (auto op:i.operands) value.elements.push_back(get(op));
+                std::function<ResourceValue(ResourceValue)> tupleAlias=[&](ResourceValue item) {
+                    if (!item.resources.empty()) item.kind=ProvenanceKind::AliasOf;
+                    for (auto& child:item.elements) child=tupleAlias(std::move(child));
+                    return item;
+                };
+                for (auto op:i.operands) value.elements.push_back(tupleAlias(get(op)));
                 break;
             }
             case Op::Copy: value=copyOf(get(i.operands[0]),i.id,i.type); break;
+            case Op::StopGradient: {
+                value=get(i.operands[0]);
+                if (!value.resources.empty() || !value.elements.empty()) value.kind=ProvenanceKind::AliasOf;
+                break;
+            }
             case Op::Move: {
                 requireAvailable(state,i.binding,i.span,true);
                 value=get(i.operands[0]);
