@@ -56,6 +56,7 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/backend/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/interop/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/tooling/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/autodiff/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/training/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -75,6 +76,9 @@ target_link_libraries(thiran_v0_analysis PUBLIC thiran_v0_semantic)
 
 add_library(thiran_v0_autodiff STATIC src/autodiff/v0/Autodiff.cpp)
 target_link_libraries(thiran_v0_autodiff PUBLIC thiran_v0_analysis)
+
+add_library(thiran_v0_training STATIC src/training/v0/Training.cpp)
+target_link_libraries(thiran_v0_training PUBLIC thiran_v0_autodiff)
 
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
 target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis)
@@ -128,6 +132,11 @@ if(BUILD_TESTING)
     target_link_libraries(v0_autodiff_tests PRIVATE thiran_v0_autodiff)
     target_compile_definitions(v0_autodiff_tests PRIVATE THIRAN_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME V0AutodiffTests COMMAND v0_autodiff_tests)
+
+    add_executable(v0_training_tests tests/training/v0/TrainingTests.cpp)
+    target_link_libraries(v0_training_tests PRIVATE thiran_v0_training)
+    target_compile_definitions(v0_training_tests PRIVATE THIRAN_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME V0TrainingTests COMMAND v0_training_tests)
 
     add_executable(v0_storage_tests tests/storage/v0/StorageTests.cpp)
     target_link_libraries(v0_storage_tests PRIVATE thiran_v0_storage)

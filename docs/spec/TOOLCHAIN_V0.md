@@ -19,6 +19,8 @@ The driver does not contain a parser, checker, ownership analysis, extractor, or
 
 TH-010 f32 source accepted by the semantic/effect stages is likewise meaningful to `check`. The current TensorRegion/native path may reject f32, `stop_gradient`, generated gradient programs, and generated AD helper operations as `BACKEND-UNSUPPORTED` with `fallback: NONE`. TH-010 adds a C++ reference VJP/grad API but no production or developer CLI `grad` command.
 
+TH-011 composes that C++ reference API with an explicit training plan/state/optimizer library. It adds no CLI command and does not change `check`, `build`, or `run`: training losses may pass `check`, while STRICT_NATIVE build/run continue to reject unsupported f32/matmul/AD with `BACKEND-UNSUPPORTED` and `fallback: NONE`. The driver never selects reference training as a fallback.
+
 ## Developer commands
 
 ```text

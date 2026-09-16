@@ -315,15 +315,24 @@ std::string DifferentiationResult::dump() const {
 
 Observation executeVjp(const DifferentiationResult& result,const std::vector<RuntimeValue>& arguments,
                        const RuntimeValue& outputCotangent) {
-    if (!result.ok()) return {false,{},"TH010-INVALID-AD-RESULT"};
+    auto execution=executeVjpWithPrimal(result,arguments,outputCotangent);
+    if (!execution.ok()) return {false,{},execution.errorId};
+    return {true,std::move(execution.gradients),{}};
+}
+VjpExecutionResult executeVjpWithPrimal(const DifferentiationResult& result,
+                                        const std::vector<RuntimeValue>& arguments,
+                                        const RuntimeValue& outputCotangent) {
+    if (!result.ok()) return {{},{},"TH010-INVALID-AD-RESULT"};
     auto forward=evaluateCall(*result.module,result.module->functions[0].name,arguments);
-    if (!forward.ok) return forward;
+    if (!forward.ok) return {{},{},forward.errorId};
     const auto* tuple=std::get_if<RuntimeTuple>(&forward.value->data);
-    if (!tuple || tuple->size()!=result.saves.size()+1) return {false,{},"TH010-FORWARD-CONTRACT"};
+    if (!tuple || tuple->size()!=result.saves.size()+1) return {{},{},"TH010-FORWARD-CONTRACT"};
     std::vector<RuntimeValue> backwardArgs;
     for (std::size_t k=1;k<tuple->size();++k) backwardArgs.push_back((*tuple)[k]);
     backwardArgs.push_back(outputCotangent);
-    return evaluateCall(*result.module,result.module->functions[1].name,backwardArgs);
+    auto backward=evaluateCall(*result.module,result.module->functions[1].name,backwardArgs);
+    if (!backward.ok) return {{},{},backward.errorId};
+    return {(*tuple)[0],std::move(backward.value),{}};
 }
 Observation executeGrad(const DifferentiationResult& result,const std::vector<RuntimeValue>& arguments) {
     if (!result.module || result.module->functions.empty()) return {false,{},"TH010-INVALID-AD-RESULT"};

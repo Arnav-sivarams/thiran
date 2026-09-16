@@ -47,6 +47,8 @@ Three generated-only core operations are ordinary semantic IR, not evaluator opc
 
 `executeVjp` evaluates generated forward, extracts its explicit tuple, accepts an explicit output cotangent of exactly the output type/shape, and evaluates backward only after forward succeeds. Tensor outputs are never implicitly seeded. `executeGrad` requires scalar f32 output and supplies exactly `1.0f`.
 
+TH-011's narrow `executeVjpWithPrimal` result exposes the primal and ordered cotangents from that same single forward/backward pair to [reference training](TRAINING_V0.md). It does not add a tape or optimizer operation. The local explicit save tuple lives through backward and is released before the training optimizer constructs replacement parameter values.
+
 Reference f32 uses a host `float` only when it is four-byte IEC 559 binary32 and the active rounding mode is round-to-nearest. Operations remain in semantic program order; matrix multiply forces a separately rounded binary32 product and addition and no fast-math/reassociation is enabled. Overflow, signed zero, infinity, and NaN follow the frozen IEEE behavior. This is a qualified host assumption, not a portable decimal serialization claim. Observations use enough decimal digits to round-trip finite float values and spell nonfinite values deterministically.
 
 Finite differences are test-only independent audits. TH-010 uses central differences with epsilon `1e-3` for selected scalar, elementwise, and 2x2 matmul losses, with `0.002`, `0.01`, and `0.03` absolute tolerances respectively. Reverse AD never invokes finite differences.

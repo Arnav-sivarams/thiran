@@ -44,6 +44,13 @@ struct DifferentiationResult {
     std::string dump() const;
 };
 
+struct VjpExecutionResult {
+    std::optional<semantic::RuntimeValue> primal;
+    std::optional<semantic::RuntimeValue> gradients;
+    std::string errorId;
+    bool ok() const { return primal.has_value() && gradients.has_value() && errorId.empty(); }
+};
+
 DifferentiationResult differentiate(const semantic::Module&,
                                     const analysis::OwnershipAnalysisResult&,
                                     const ReverseModeRequest&);
@@ -52,6 +59,9 @@ std::vector<AdDiagnostic> verify(const semantic::Module& source,
 semantic::Observation executeVjp(const DifferentiationResult&,
                                  const std::vector<semantic::RuntimeValue>& arguments,
                                  const semantic::RuntimeValue& outputCotangent);
+VjpExecutionResult executeVjpWithPrimal(const DifferentiationResult&,
+                                        const std::vector<semantic::RuntimeValue>& arguments,
+                                        const semantic::RuntimeValue& outputCotangent);
 semantic::Observation executeGrad(const DifferentiationResult&,
                                   const std::vector<semantic::RuntimeValue>& arguments);
 }

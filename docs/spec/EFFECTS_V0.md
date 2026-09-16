@@ -6,6 +6,8 @@ An ordered runtime Check has MayTrap. Checked i64 operations and indexing/reduct
 
 TH-010 eligibility consumes these summaries rather than inferring purity from source spelling. Pure and Pure+MayTrap are eligible; Mutates, RNG, IO, Transfer, and Async reject. Generated forward/backward functions are analyzed again. Pure scalar-f32 backward arithmetic remains Pure; dynamic shape helpers and matmul obligations carry MayTrap rather than being falsely classified Pure.
 
+TH-011 preserves those loss/generated-function facts but treats `trainingStep` separately as an explicit runtime/library state transition from one `TrainingState` to another. Logical input immutability does not make the transition a Pure source operation, and no fake Mutates, IO, or RNG effect is injected into the user's loss. A future source optimizer API must expose its state/mutation contract.
+
 Function summaries union effects from their own ordered nested blocks and called functions. A bounded deterministic fixed point propagates effects through recursive call cycles. Branch and loop effects occur only on executed paths in the ordered IR, while a function summary states that an effect may occur on some path. Checks, calls, and mutation boundaries must remain in source execution order; TH-006 performs no hoisting, extraction, or reordering.
 
 pureTensorCandidate is a conservative future extraction gate: mutation, a safety diagnostic, MayTrap, RNG, IO, Transfer, or Async makes it false. A true value is only an eligibility fact, not proof a tensor region exists or can be compiled. Later extraction must also verify types, tensor operations, explicit checks, numerical behavior, and storage/lifetime constraints. Effect summaries are legality data, not optimization.
