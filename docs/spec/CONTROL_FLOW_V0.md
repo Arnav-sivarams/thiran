@@ -34,4 +34,4 @@ A runtime `Check` is an observable, trapping semantic operation in its actual or
 
 Future pure tensor/dataflow regions can be extracted from an ordered block, branch, or loop after ownership/effect/AD obligations are checked. The entire structured function is not an acyclic tensor DAG. Structured semantic IR is the source-level authority; Graph/Region remain downstream, legal-region machinery only.
 
-Control-flow support is not ownership safety, AD, native execution, or physical storage semantics.
+Control-flow support is not ownership safety, AD, native execution, or physical storage semantics. TH-007 [storage views](STORAGE_V0.md) provide a concrete leading-axis read-view substrate, but iterable-tensor for remains deferred until iteration-variable root/body lifetime facts can be represented and audited through all Break/Continue/Return paths without inventing returned-view syntax.

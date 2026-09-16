@@ -36,6 +36,10 @@ The verifier is independent of the analyzer and checks unique/monotonic semantic
 
 The C++ standard-library reference evaluator first verifies IR, then executes the initializer or a named function using distinct i64, bool, tensor, and tuple runtime values. A tensor carries dtype, nonnegative runtime shape, and flat logical row-major elements. Checked overflow is established before any invalid signed operation, including unary negation, scalar/elementwise arithmetic, matmul products and accumulation, and sum. Runtime Check steps execute with their declared semantic ID. A call-depth and step/tensor-size limit prevents accidental unbounded execution; resource-limit IDs are evaluator-internal, not conformance IDs. Observation formatting is deterministic and adapts scalar/tensor success to the TH-003 status/kind/dtype/value-or-shape/values core, or checked failure to status/error_id. Tuple observation is a developer extension, not part of the TH-003 fixture schema. This evaluator is neither Python-dependent nor optimized/native production execution.
 
+## TH-007 storage boundary
+
+The separate [STORAGE_V0.md](STORAGE_V0.md) host substrate verifies concrete dtype, shape, strides, offsets, and retained storage after TH-006 analysis. It does not change IR authority or make this independent logical-value evaluator use physical storage. No whole-program storage lowering or native execution is claimed.
+
 ## Intentionally unsupported
 
 TH-006 checks abstract ownership/borrowing/view lifetimes in the implemented safe subset. No physical storage, real or non-i64 arithmetic, generic function specialization, native CPU/GPU, AD, AOT/JIT, package linking, or production CLI routing exists here. Iterable-tensor for is parser-only and receives TH005C-ITERABLE-FOR-DEFERRED in semantic analysis. Division parses but exact integer division rounding is deferred and diagnosed. Unsupported members other than rank-2 i64 transpose are diagnosed. Import-containing modules are deferred, not silently linked. The source grammar cannot construct an empty tensor literal; a zero-sized runtime tensor reduction is tested through the direct evaluator call boundary.
