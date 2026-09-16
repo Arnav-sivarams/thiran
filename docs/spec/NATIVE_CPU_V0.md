@@ -1,0 +1,11 @@
+# TH-008 bootstrap native CPU AOT vertical slice
+
+The bounded pipeline is V0 source -> parser -> typed structured semantic IR -> independent semantic verifier -> TH-006 ownership/effect qualification -> TensorRegion extraction and verifier -> deterministic generated C++20 -> installed host C++ compiler -> standalone host executable. Generated C++ is lowering output, not semantic authority. No LLVM or MLIR is introduced. This is bootstrap native CPU AOT, not production or optimized AOT, and the C++ backend is not the final backend architecture.
+
+STRICT_NATIVE has no reference-evaluator or legacy fallback. Supported standalone entry is exactly one zero-parameter `fn main() -> i64` or `Tensor<i64,1/2>`. This developer convention is not a public application ABI. Internal generated signatures use `std::int64_t`, `const storage::Tensor&`, and `storage::Tensor`; they are unstable and no C FFI is provided.
+
+Tensor literals and Add results use TH-007 `storage::Tensor::materializeI64`, with concrete contiguous row-major, offset-zero independent result storage. Immutable aliases copy only a retained tensor handle. Add requires equal rank/extents in this backend subset, iterates logical values with checked signed i64 addition before materialization, and raises `TH-SPEC-I64-OVERFLOW` without C++ signed-overflow undefined behavior. Full-rank Index converts nonnegative coordinates and calls TH-007 checked `loadI64`; invalid coordinates normalize to `TH-SPEC-BOUNDS`. Runtime unequal-shape Add is an internal backend-incomplete failure, not a fabricated semantic broadcast failure.
+
+The generated standalone entry prints one canonical TH-003/TH-005 scalar/tensor observation or a canonical supported semantic failure. Unknown C++/storage/compiler defects go to stderr with nonzero status, not a `TH-SPEC-*` language error. No IDs, addresses, paths, or timestamps enter canonical output. Host C++ is required at AOT build time; the finished ELF artifact needs only ordinary host runtime libraries and no Python, PyTorch, NumPy, Triton, generated.py, compiler process, or Thiran shared library. Artifact dependency auditing is required for qualification.
+
+Native execution is structural machine-code evidence, not speed evidence. No performance superiority, stable native ABI, production CLI route, GPU support, or final backend claim is made.

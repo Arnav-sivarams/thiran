@@ -36,6 +36,7 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/frontend/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/semantic/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/analysis/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/storage/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/backend/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -55,6 +56,9 @@ target_link_libraries(thiran_v0_analysis PUBLIC thiran_v0_semantic)
 
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
 target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis)
+
+add_library(thiran_v0_native_cpu STATIC src/backend/v0/NativeCpu.cpp)
+target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_storage)
 
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
@@ -86,6 +90,15 @@ if(BUILD_TESTING)
     add_executable(v0_storage_tests tests/storage/v0/StorageTests.cpp)
     target_link_libraries(v0_storage_tests PRIVATE thiran_v0_storage)
     add_test(NAME V0StorageTests COMMAND v0_storage_tests)
+
+    add_executable(v0_native_cpu_tests tests/backend/v0/NativeCpuTests.cpp)
+    target_link_libraries(v0_native_cpu_tests PRIVATE thiran_v0_native_cpu)
+    target_compile_definitions(v0_native_cpu_tests PRIVATE
+        TH008_CXX="${CMAKE_CXX_COMPILER}"
+        TH008_CXX_FLAGS="${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}"
+        TH008_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH008_BUILD="${CMAKE_BINARY_DIR}")
+    add_test(NAME V0NativeCpuTests COMMAND v0_native_cpu_tests)
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
