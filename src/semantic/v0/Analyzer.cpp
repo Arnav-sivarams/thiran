@@ -69,7 +69,13 @@ public:
             for (const auto& p : decl->parameters) {
                 if (!params.insert(p.name).second) fail(p.span, "TH005-DUPLICATE-BINDING", "duplicate parameter " + p.name);
                 auto type = resolve(p.type);
+                if (p.access==thiran::v0::Parameter::Access::MutableBorrow &&
+                    type.kind!=TypeKind::Tensor && type.kind!=TypeKind::Buffer)
+                    fail(p.span,"TH006-ACCESS-MODE","mutable borrow parameter requires a tensor or buffer resource");
                 f.parameters.push_back({static_cast<ValueId>(f.parameters.size() + 1), p.name, type, unknownShape(type), p.span});
+                f.parameters.back().access = p.access == thiran::v0::Parameter::Access::MutableBorrow ?
+                    AccessMode::MutableBorrow : p.access == thiran::v0::Parameter::Access::Consume ?
+                    AccessMode::Consume : AccessMode::Read;
             }
             names_[f.name] = f.id;
             declarations_.push_back(decl);
@@ -153,7 +159,7 @@ private:
             Fact fact{p.type,p.shape,{}};
             auto binding=nextBinding_++;
             const_cast<ParameterValue&>(p).binding=binding;
-            context.locals[p.name] = {binding,fact,false};
+            context.locals[p.name] = {binding,fact,p.access == AccessMode::MutableBorrow};
             context.declared.insert(p.name);
             context.facts[p.id] = fact;
         }
@@ -169,6 +175,9 @@ private:
             i.op==Op::Sum || i.op==Op::Call) i.effect=EffectClass::CheckedFailure;
         i.id = nextValue_++;
         i.type = fact.type; i.shape = fact.shape;
+        if (fact.constant && fact.type==scalar(TypeKind::I64) &&
+            (i.op==Op::Negate || i.op==Op::Add || i.op==Op::Subtract || i.op==Op::Multiply))
+            i.effect=EffectClass::Pure;
         c.block.steps.emplace_back(i);
         c.facts[i.id] = fact;
         return {i.id, fact};
@@ -211,6 +220,19 @@ private:
                 Type type{TypeKind::Tuple,{},0};
                 for (const auto& element : n.elements) { auto v=expr(*element,c); i.operands.push_back(v.id); type.elements.push_back(v.fact.type); }
                 return emit(c,std::move(i),{type,{}, {}});
+            } else if constexpr (std::is_same_v<N, OwnershipExpr>) {
+                if (n.kind == OwnershipExpr::Kind::MutableBorrow)
+                    fail(e.span,"TH006-ACCESS-MODE","borrow mut is only legal as an argument to a mutable-borrow parameter");
+                if (n.kind == OwnershipExpr::Kind::Move && !std::holds_alternative<IdentifierExpr>(n.operand->node))
+                    fail(e.span,"TH006-ACCESS-MODE","move requires a source binding identifier");
+                auto value=expr(*n.operand,c);
+                Instruction i; i.op=n.kind == OwnershipExpr::Kind::Copy ? Op::Copy : Op::Move;
+                i.span=e.span; i.operands={value.id};
+                if (i.op==Op::Move) {
+                    const auto& name=std::get<IdentifierExpr>(n.operand->node).name;
+                    i.binding=c.locals.at(name).id;
+                }
+                return emit(c,std::move(i),value.fact);
             } else if constexpr (std::is_same_v<N, UnaryExpr>) {
                 if (auto* spelling=std::get_if<IntegerLiteralExpr>(&n.operand->node)) {
                     auto value=literal(spelling->spelling,true);
@@ -312,10 +334,35 @@ private:
         if (n.arguments.size()!=result_.functions[id-1].parameters.size()) fail(e.span,"TH005-ARITY","function argument count disagrees with signature");
         Instruction i; i.op=Op::Call; i.span=e.span; i.callee=id;
         for (std::size_t k=0;k<n.arguments.size();++k) {
+            const auto mode=result_.functions[id-1].parameters[k].access;
+            auto* ownership=std::get_if<OwnershipExpr>(&n.arguments[k]->node);
+            if (mode==AccessMode::MutableBorrow) {
+                if (!ownership || ownership->kind!=OwnershipExpr::Kind::MutableBorrow)
+                    fail(n.arguments[k]->span,"TH006-ACCESS-MODE","mutable parameter requires borrow mut at the call site");
+                auto* binding=std::get_if<IdentifierExpr>(&ownership->operand->node);
+                if (!binding) fail(n.arguments[k]->span,"TH006-ACCESS-MODE","borrow mut requires a binding identifier");
+                auto local=c.locals.find(binding->name);
+                if (local==c.locals.end()) fail(n.arguments[k]->span,"TH005-UNDEFINED-NAME","undefined mutable-borrow source");
+                if (!local->second.mutableBinding)
+                    fail(n.arguments[k]->span,"TH006-MUT-BORROW-IMMUTABLE","mutable borrow requires a mutable source binding");
+                auto loaded=expr(*ownership->operand,c);
+                Instruction borrow; borrow.op=Op::MutableBorrow; borrow.span=n.arguments[k]->span;
+                borrow.operands={loaded.id}; borrow.binding=local->second.id;
+                auto arg=emit(c,std::move(borrow),loaded.fact);
+                if (arg.fact.type!=result_.functions[id-1].parameters[k].type)
+                    fail(n.arguments[k]->span,"TH005-ARGUMENT-TYPE","argument type disagrees with parameter type");
+                i.operands.push_back(arg.id); i.argumentAccess.push_back(mode);
+                continue;
+            }
+            if (mode==AccessMode::Consume && (!ownership || ownership->kind!=OwnershipExpr::Kind::Move))
+                fail(n.arguments[k]->span,"TH006-ACCESS-MODE","consuming parameter requires move(binding)");
+            if (mode==AccessMode::Read && ownership && ownership->kind==OwnershipExpr::Kind::MutableBorrow)
+                fail(n.arguments[k]->span,"TH006-ACCESS-MODE","read parameter cannot accept borrow mut");
             auto arg=expr(*n.arguments[k],c);
             if (arg.fact.type!=result_.functions[id-1].parameters[k].type)
                 fail(n.arguments[k]->span,"TH005-ARGUMENT-TYPE","argument type disagrees with parameter type");
             i.operands.push_back(arg.id);
+            i.argumentAccess.push_back(mode);
         }
         ensure(id);
         auto type=result_.functions[id-1].result;
@@ -394,6 +441,7 @@ private:
         c.block.steps.emplace_back(Flow{Flow::Kind::Return,value.id,n.span});
         c.block.returned=value.id; c.block.terminated=true;
     }
+    void statement(const ExprStmt& n, BlockContext& c) { (void)expr(*n.value,c); }
     static SourceSpan stmtSpan(const Statement& s) {
         return std::visit([](const auto& n){return n.span;},s.node);
     }

@@ -293,6 +293,7 @@ private:
                     result.data=std::move(tensor); break;
                 }
                 case Op::Tuple: { RuntimeTuple tuple; for (auto id:i.operands) tuple.push_back(values.at(id)); result.data=std::move(tuple); break; }
+                case Op::Copy: case Op::Move: case Op::MutableBorrow: result=operand(0); break;
                 case Op::Negate: {
                     if (auto* x=std::get_if<std::int64_t>(&operand(0).data)) result.data=neg(*x);
                     else { auto t=tensorValue(operand(0)); for (auto& v:t.values) v=neg(v); result.data=std::move(t); }

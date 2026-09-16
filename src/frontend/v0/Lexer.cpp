@@ -16,7 +16,8 @@ const std::unordered_map<std::string, TokenKind> keywords = {
     {"if", TokenKind::If}, {"else", TokenKind::Else},
     {"for", TokenKind::For}, {"in", TokenKind::In},
     {"while", TokenKind::While}, {"break", TokenKind::Break},
-    {"continue", TokenKind::Continue}, {"struct", TokenKind::Struct}
+    {"continue", TokenKind::Continue}, {"struct", TokenKind::Struct},
+    {"borrow", TokenKind::Borrow}, {"copy", TokenKind::Copy}, {"move", TokenKind::Move}
 };
 }
 

@@ -2,6 +2,8 @@
 
 This document describes the isolated V0 frontend and semantic pipeline, not a stable edition or the production R12 CLI. The frozen `docs/language/` semantics remain authoritative.
 
+TH-006 uses these ordered blocks for backward may-liveness and forward availability/resource-state analysis. Branch joins preserve any possible resource relationship and require definite binding availability. Return paths terminate before a following merge. Range and while loops solve deterministic back-edge fixed points for both future uses and potentially repeated moves; Break exits to the loop successor and Continue reaches the next condition/iteration. No loop unrolling or current constant-bound shortcut establishes general ownership legality. See [OWNERSHIP_V0.md](OWNERSHIP_V0.md).
+
 ## Source syntax and lexical scopes
 
 Braced statements support `if condition { ... } [else { ... }]`, `for i in start:end { ... }`, `while condition { ... }`, `break`, and `continue`. `if` is a statement, not an expression. Conditions require scalar `bool`; tensor truthiness is rejected. Range bounds require `i64`. A colon after the first range-bound expression is grammatical in `for`, independent of type-annotation and tensor-selector colons. Blocks preserve TH-004 newline/semicolon separators; row semicolons inside tensor literals remain distinct.

@@ -1,0 +1,9 @@
+# TH-006 V0 effect analysis
+
+The isolated V0 analysis stores an ordered instruction-level effect class in semantic IR and a deterministic per-function summary in OwnershipAnalysisResult. A zero effect set is Pure; the represented kinds are MayTrap, Mutates, RNG, IO, Transfer, and Async. RNG, IO, Transfer, and Async are representable future kinds, not implemented source operations.
+
+An ordered runtime Check has MayTrap. Checked i64 operations and indexing/reductions that can fail retain MayTrap; a statically proven constant scalar arithmetic expression can be Pure. copy is logically independent ownership production but Pure for side-effect ordering; move changes binding availability but is not IO or RNG. A borrow mut call and a mutable-borrow parameter signature carry Mutates, identifying the parameter or call resource in ownership facts. The reference evaluator's lack of physical mutation cannot erase this effect.
+
+Function summaries union effects from their own ordered nested blocks and called functions. A bounded deterministic fixed point propagates effects through recursive call cycles. Branch and loop effects occur only on executed paths in the ordered IR, while a function summary states that an effect may occur on some path. Checks, calls, and mutation boundaries must remain in source execution order; TH-006 performs no hoisting, extraction, or reordering.
+
+pureTensorCandidate is a conservative future extraction gate: mutation, a safety diagnostic, MayTrap, RNG, IO, Transfer, or Async makes it false. A true value is only an eligibility fact, not proof a tensor region exists or can be compiled. Later extraction must also verify types, tensor operations, explicit checks, numerical behavior, and storage/lifetime constraints. Effect summaries are legality data, not optimization.

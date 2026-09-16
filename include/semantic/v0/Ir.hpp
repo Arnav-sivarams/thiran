@@ -28,8 +28,9 @@ bool validType(const Type&);
 bool executableType(const Type&);
 struct ShapeFact { std::vector<std::optional<std::int64_t>> extents; bool operator==(const ShapeFact&) const = default; };
 enum class EffectClass { Pure, CheckedFailure, Mutation, Rng, Io, Transfer, Async };
-enum class Op { Integer, Boolean, LoadBinding, TensorLiteral, Tuple, Negate, Add, Subtract, Multiply,
-                ElementMultiply, Matmul, Index, Slice, Transpose, Sum, Call };
+enum class AccessMode { Read, MutableBorrow, Consume };
+enum class Op { Integer, Boolean, LoadBinding, TensorLiteral, Tuple, Copy, Move, MutableBorrow,
+                Negate, Add, Subtract, Multiply, ElementMultiply, Matmul, Index, Slice, Transpose, Sum, Call };
 enum class CheckKind { Bounds, Broadcast, MatmulShape, Slice };
 struct Selector {
     bool slice = false;
@@ -47,6 +48,7 @@ struct Instruction {
     std::optional<bool> boolean;
     FunctionId callee = 0;
     BindingId binding = 0;
+    std::vector<AccessMode> argumentAccess;
     std::uint32_t axis = 0;
     bool borrowedView = false;
     EffectClass effect = EffectClass::Pure;
@@ -74,7 +76,7 @@ struct Structured {
 using Step = std::variant<Instruction, Check, BindingWrite, Flow, Structured>;
 struct ParameterValue { ValueId id = 0; std::string name; Type type; ShapeFact shape; SourceSpan span;
     BindingId binding = 0;
-    enum class Access { ReadOnly, ExclusiveMutable, Consuming } access = Access::ReadOnly; };
+    AccessMode access = AccessMode::Read; };
 struct Binding { std::string name; ValueId value = 0; bool mutableBinding = false; SourceSpan span;
     BindingId id = 0; Type type; ShapeFact shape; };
 struct Block {

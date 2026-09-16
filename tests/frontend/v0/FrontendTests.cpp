@@ -33,7 +33,8 @@ void expressionSpans(const Expr& e) {
         } else if constexpr (std::is_same_v<T, CallExpr>) {
             expressionSpans(*n.callee);
             for (const auto& arg : n.arguments) expressionSpans(*arg);
-        } else if constexpr (std::is_same_v<T, MemberExpr>) expressionSpans(*n.object);
+        } else if constexpr (std::is_same_v<T, OwnershipExpr>) expressionSpans(*n.operand);
+        else if constexpr (std::is_same_v<T, MemberExpr>) expressionSpans(*n.object);
         else if constexpr (std::is_same_v<T, IndexExpr>) {
             expressionSpans(*n.object);
             for (const auto& axis : n.axes) std::visit([&](const auto& selector) {
@@ -57,7 +58,7 @@ void statementSpans(const Statement& s) {
     std::visit([&](const auto& n) {
         using T=std::decay_t<decltype(n)>;
         span(n.span);
-        if constexpr (std::is_same_v<T,LetStmt> || std::is_same_v<T,RebindStmt> || std::is_same_v<T,ReturnStmt>) expressionSpans(*n.value);
+        if constexpr (std::is_same_v<T,LetStmt> || std::is_same_v<T,RebindStmt> || std::is_same_v<T,ReturnStmt> || std::is_same_v<T,ExprStmt>) expressionSpans(*n.value);
         else if constexpr (std::is_same_v<T,IfStmt>) {
             expressionSpans(*n.condition);
             for (const auto& s:n.thenBody) statementSpans(*s);
@@ -214,11 +215,24 @@ void robustnessTests() {
                   "robust input yielded unlocated diagnostic");
     }
 }
+void ownershipSyntaxTests() {
+    auto syntax=valid("TH006-P01",R"(fn touch(x: borrow mut Tensor<i64,2>) -> i64 { return 0 }
+fn f() -> i64 { let mut A = [1,2;3,4]; touch(borrow mut A); let B = copy(A); let C = move(A); return C[0,0] })");
+    check(syntax.find("borrow_mut(")!=std::string::npos,"missing mutable-borrow AST");
+    check(syntax.find("copy(")!=std::string::npos && syntax.find("move(")!=std::string::npos,"missing ownership primitive AST");
+    valid("TH006-P02","fn consume(x: move Tensor<i64,2>) -> i64 { return x[0,0] }");
+    invalid("TH006-P03","fn f()->i64 { let A = borrow A; return 0 }","only 'borrow mut'");
+    invalid("TH006-P04","fn f()->i64 { let A = borrow mut; return 0 }","requires an expression");
+    invalid("TH006-P05","let A = move()","requires an expression");
+    invalid("TH006-P06","let A = copy()","requires an expression");
+    invalid("TH006-P07","fn f(x: mut borrow Tensor<i64,2>)->i64{return 0}","expected type name");
+    invalid("TH006-P08","fn f(x: borrow Tensor<i64,2>)->i64{return 0}","borrow mut");
+}
 }
 
 int main() {
     try {
-        lexerTests(); validTests(); invalidTests(); robustnessTests();
+        lexerTests(); validTests(); invalidTests(); robustnessTests(); ownershipSyntaxTests();
         std::cout << "PASS V0 lexer/parser fixtures (10 valid, 10 invalid, 24 bounded robustness + extensions)\n";
         return 0;
     } catch (const std::exception& error) {

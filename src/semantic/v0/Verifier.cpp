@@ -175,6 +175,13 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                 for (auto t:operands) ok &= t==scalar(TypeKind::I64); require(ok); break;
             }
             case Op::Tuple: require(i.type.kind==TypeKind::Tuple && i.type.elements==operands); break;
+            case Op::Copy: require(operands.size()==1 && i.type==operands[0] && !i.binding); break;
+            case Op::Move: case Op::MutableBorrow: {
+                auto it=slots.find(i.binding);
+                require(operands.size()==1 && i.type==operands[0] && it!=slots.end() && it->second.type==i.type &&
+                    (i.op!=Op::MutableBorrow || (it->second.mutableBinding &&
+                        (i.type.kind==TypeKind::Tensor || i.type.kind==TypeKind::Buffer)))); break;
+            }
             case Op::Negate: require(operands.size()==1 && i.type==operands[0] && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool); break;
             case Op::Add: case Op::Subtract: case Op::Multiply: case Op::ElementMultiply: {
                 bool ok=operands.size()==2 && executableType(i.type) && i.type.kind!=TypeKind::Tuple && i.type.kind!=TypeKind::Bool;
@@ -207,6 +214,11 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                 const auto& target=m.functions[i.callee-1];
                 bool ok=target.id==i.callee && i.type==target.result && operands.size()==target.parameters.size();
                 if (operands.size()==target.parameters.size()) for (std::size_t k=0;k<operands.size();++k) ok &= operands[k]==target.parameters[k].type;
+                if (!i.argumentAccess.empty()) {
+                    ok &= i.argumentAccess.size()==target.parameters.size();
+                    if (i.argumentAccess.size()==target.parameters.size())
+                        for (std::size_t k=0;k<i.argumentAccess.size();++k) ok &= i.argumentAccess[k]==target.parameters[k].access;
+                } else for (const auto& p:target.parameters) ok &= p.access==AccessMode::Read;
                 require(ok); break;
             }
         }
@@ -227,7 +239,11 @@ VerificationResult verify(const Module& m) {
             if (p.id!=state.value++ || p.binding!=state.binding++ || values.contains(p.id) || slots.contains(p.binding))
                 err(r,"parameter ID invalid");
             if (!validType(p.type) || !shapeOk(p.type,p.shape)) err(r,"parameter type/shape invalid");
-            values[p.id]=p.type; slots[p.binding]={p.type,false};
+            if (p.access!=AccessMode::Read && p.access!=AccessMode::MutableBorrow && p.access!=AccessMode::Consume)
+                err(r,"invalid parameter access mode");
+            if (p.access==AccessMode::MutableBorrow && p.type.kind!=TypeKind::Tensor && p.type.kind!=TypeKind::Buffer)
+                err(r,"mutable parameter access mode requires resource type");
+            values[p.id]=p.type; slots[p.binding]={p.type,p.access==AccessMode::MutableBorrow};
         }
         inspect(m,f.body,&f,state,r,values,slots,0,0);
         if (!returns(f.body)) err(r,"function lacks return on some path");

@@ -1,0 +1,33 @@
+# TH-006 V0 safe ownership subset
+
+This is the implemented abstract safety contract for the isolated V0 pipeline. It is neither a physical tensor storage model nor a native-runtime proof or stable public edition. Source is parsed and typed as before; thiran_v0_analysis checks verified structured semantic IR and returns dedicated ownership facts and located diagnostics. The R12 production CLI does not run this pipeline.
+
+## Identity and provenance
+
+BindingId identifies a lexical slot, ValueId identifies a semantic expression result, and ResourceId identifies a logical mutable resource for alias and exclusivity reasoning. None is an address, allocation, reference count, runtime handle, or device buffer. A fresh tensor-producing site or parameter gets a deterministic abstract ResourceId; an identifier load gets a new ValueId while retaining the binding's resource relationship. Resource IDs are created from fresh-producing sites, never inferred from equal ValueIds alone. Tuple facts retain provenance per element.
+
+The analysis distinguishes Fresh, AliasOf, ReadViewOf, IndependentCopyOf, PossibleAlias at call boundaries, and scalar/no-resource. Literals and value-producing tensor arithmetic are fresh logical resources. Ordinary B = A binding is a non-consuming immutable alias of A's resource and emits no Copy or Move. copy(A) is a language primitive and gives an independent logical resource; copy of a tuple duplicates each contained resource value. move(A) is a language primitive that consumes only binding A and transfers its resource relationship. Surviving aliases remain available, and a move never proves uniqueness. copy and move are reserved names, not resolved user functions. A read-only call is non-consuming without visible borrow syntax. A possible alias-valued call result retains any caller view-root relationship from its arguments.
+
+An unavailable binding cannot be loaded or moved again. A move in one branch and no move in another yields MaybeUnavailable after the merge; only DefinitelyAvailable permits use. A mutable binding's slot remains after a move and may be reinitialized by a type-compatible rebind. Reinitialization replaces the moved value; it is not mutation of the old resource. A = new_value similarly rebinds A without changing an old resource observed through B. No hidden copy-on-write rescues an illegal mutable access.
+
+## Views and handle roots
+
+Slice, partial indexing that still returns a tensor, and rank-two transpose create read views. A view fact records its base ResourceId set, deterministic ViewId, source span, and root handle BindingId set. A view from Alias[0,:] is rooted in Alias even when Alias and A share one resource. Moving or rebinding Alias while that view may be live is rejected; moving a different alias A does not invalidate the Alias-rooted view. A view also cannot be stored into a binding whose scope outlives a local root. Views inside tuples retain the same roots. The evaluator may materialize view elements for mathematical observation; this does not turn the semantic view into a fresh resource.
+
+The public syntax has no truthful returned-view lifetime relation yet. All returned read views, including those inside tuples or rooted in a parameter, receive TH006-VIEW-RETURN-DEFERRED. An alias-valued ordinary tensor result can remain legal; a result that aliases a caller view still carries that caller's root. A mutable borrow may only live for its explicit call and cannot escape through a return value. A view from a temporary tensor expression without a provable root handle is conservatively rejected.
+
+## Liveness and exclusivity
+
+Backward may-liveness over ordered semantic steps records future binding uses. Sequential steps kill a binding's old liveness on declaration/rebind; Return terminates the path; Break and Continue use loop-exit and back-edge live sets. If/else and no-else paths join conservatively. Range and while loops solve a finite may-live fixed point at the back-edge; a binding read next iteration is live at a mutable call in this iteration. This does not unroll constant bounds or assume a branch is untaken because of its spelling.
+
+Forward abstract availability/resource state follows each path. Branch joins union possible relationships and keep only definite availability; returning paths do not pollute following code. Loop head state reaches a deterministic fixed point including possible later iterations. Potentially repeated moves are rejected unless the binding is reinitialized before every later use/move. Where legality cannot be proven, safe source is rejected.
+
+borrow mut A requires mutable source binding A and grants exclusive access to A's logical resource only during the call. A potentially live competing immutable alias or read view, another overlapping call argument, or a read-only parameter resource reached through a local alias blocks it. An alias/view whose last use is before the call does not. A read view cannot itself grant mutable access. The call ends the borrow's lexical lifetime; later ordinary read access is legal. The mutable parameter signature declares a Mutates effect even if this checkpoint has no concrete indexed storage write. Binding rebind is not resource mutation.
+
+## Function modes and future reservations
+
+An unqualified Tensor<T,R> parameter has Read mode. borrow mut Tensor<T,R> (or Buffer<T>) has MutableBorrow mode and requires borrow mut A at its call site; scalar MutableBorrow is rejected in this bounded resource-mutation subset. move Tensor<T,R> has Consume mode and requires move(A). move(A) may also be passed to a normal Read parameter; the caller binding is still consumed by the explicit primitive. Default Read parameters cannot mutate their caller resource through a newly mutable local alias.
+
+The state representation has extension points for SavedForBackward and AsyncUsePending; neither is fabricated by TH-006. A future saved backward value is a live read obligation against mutation. A future pending async read/write is a live device reservation through completion. Future unsafe/FFI source must explicitly declare ownership transfer, aliasing, extents, lifetime, device/thread requirements, and mutation; safe source cannot manufacture unchecked facts. There is no unsafe/FFI source operation here.
+
+Ownership analysis does not allocate or reuse physical storage. The abstract safe subset excludes AD, async/device storage, arbitrary FFI, raw pointers, general indexed assignment, and native execution. Future storage lowering must preserve these facts and verify its own physical lifetimes.

@@ -90,6 +90,28 @@ private:
     }
     ExprPtr prefix(bool soft) {
         if (soft) softNewlines();
+        if (at(TokenKind::Copy) || at(TokenKind::Move)) {
+            auto keyword = take();
+            expect(TokenKind::LeftParen, "ownership primitive requires '('");
+            softNewlines();
+            if (at(TokenKind::RightParen)) fail("ownership primitive requires an expression");
+            auto operand = expression(0, true);
+            softNewlines();
+            auto close = expect(TokenKind::RightParen, "ownership primitive requires ')'");
+            return make(joined(keyword.span, close.span), OwnershipExpr{
+                keyword.kind == TokenKind::Copy ? OwnershipExpr::Kind::Copy : OwnershipExpr::Kind::Move,
+                std::move(operand)});
+        }
+        if (at(TokenKind::Borrow)) {
+            auto keyword = take();
+            expect(TokenKind::Mut, "only 'borrow mut' is supported");
+            if (at(TokenKind::RightParen) || at(TokenKind::Comma) || at(TokenKind::Semicolon) ||
+                at(TokenKind::End) || at(TokenKind::Newline))
+                fail("borrow mut requires an expression");
+            auto operand = expression(30, soft);
+            auto span=joined(keyword.span, operand->span);
+            return make(span, OwnershipExpr{OwnershipExpr::Kind::MutableBorrow, std::move(operand)});
+        }
         if (at(TokenKind::Minus)) {
             auto minus = take();
             auto operand = expression(30, soft);
@@ -305,6 +327,9 @@ private:
             auto name = take(); take(); auto value = expression();
             return Statement{RebindStmt{joined(name.span, value->span), name.text, std::move(value)}};
         }
+        if (at(TokenKind::Identifier) || at(TokenKind::Copy) || at(TokenKind::Move) || at(TokenKind::Borrow)) {
+            auto value=expression(); return Statement{ExprStmt{value->span,std::move(value)}};
+        }
         fail("unexpected token in function body");
     }
     ImportDecl importDecl() {
@@ -326,8 +351,13 @@ private:
             do {
                 auto paramName = expect(TokenKind::Identifier, "malformed function parameter: expected identifier");
                 expect(TokenKind::Colon, "malformed function parameter: expected ':' and explicit type");
+                Parameter::Access access = Parameter::Access::Read;
+                if (match(TokenKind::Borrow)) {
+                    expect(TokenKind::Mut, "mutable parameter requires 'borrow mut'");
+                    access = Parameter::Access::MutableBorrow;
+                } else if (match(TokenKind::Move)) access = Parameter::Access::Consume;
                 auto type = typeSyntax(false);
-                function.parameters.push_back({joined(paramName.span, type.span), paramName.text, std::move(type)});
+                function.parameters.push_back({joined(paramName.span, type.span), paramName.text, std::move(type), access});
                 softNewlines();
             } while (match(TokenKind::Comma) && (softNewlines(), !at(TokenKind::RightParen)));
         }

@@ -49,6 +49,10 @@ void expr(std::ostringstream& out, const Expr& value) {
             out << "call("; expr(out, *n.callee);
             for (auto& arg : n.arguments) { out << ','; expr(out, *arg); }
             out << ')';
+        } else if constexpr (std::is_same_v<T, OwnershipExpr>) {
+            out << (n.kind == OwnershipExpr::Kind::Copy ? "copy(" :
+                n.kind == OwnershipExpr::Kind::Move ? "move(" : "borrow_mut(");
+            expr(out, *n.operand); out << ')';
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
             out << "member("; expr(out, *n.object); out << ',' << n.member << ')';
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
@@ -102,6 +106,8 @@ void stmt(std::ostringstream& out, const Statement& s) {
             out << "rebind(" << n.name << ','; expr(out, *n.value); out << ')';
         } else if constexpr (std::is_same_v<T, ReturnStmt>) {
             out << "return("; expr(out, *n.value); out << ')';
+        } else if constexpr (std::is_same_v<T, ExprStmt>) {
+            out << "expr_stmt("; expr(out, *n.value); out << ')';
         } else if constexpr (std::is_same_v<T, IfStmt>) {
             out << "if("; expr(out,*n.condition); out << ",then("; stmts(out,n.thenBody);
             out << ')'; if (n.hasElse) { out << ",else("; stmts(out,n.elseBody); out << ')'; } out << ')';
@@ -136,7 +142,10 @@ std::string dump(const Module& module) {
                 out << "fn(" << (n.exported ? "export," : "private,") << n.name << ",params(";
                 for (std::size_t j = 0; j < n.parameters.size(); ++j) {
                     if (j) out << ',';
-                    out << n.parameters[j].name << ':'; type(out, n.parameters[j].type);
+                    out << n.parameters[j].name << ':';
+                    if (n.parameters[j].access == Parameter::Access::MutableBorrow) out << "borrow mut ";
+                    if (n.parameters[j].access == Parameter::Access::Consume) out << "move ";
+                    type(out, n.parameters[j].type);
                 }
                 out << "),result(";
                 if (n.resultType) type(out, *n.resultType); else out << '_';

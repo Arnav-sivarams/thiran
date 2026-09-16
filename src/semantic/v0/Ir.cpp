@@ -50,6 +50,8 @@ std::string opName(Op op) {
         case Op::Integer: return "integer"; case Op::Boolean: return "boolean";
         case Op::LoadBinding: return "load_binding";
         case Op::TensorLiteral: return "tensor_literal"; case Op::Tuple: return "tuple";
+        case Op::Copy: return "copy"; case Op::Move: return "move";
+        case Op::MutableBorrow: return "borrow_mut";
         case Op::Negate: return "negate"; case Op::Add: return "add";
         case Op::Subtract: return "subtract"; case Op::Multiply: return "multiply";
         case Op::ElementMultiply: return "element_multiply"; case Op::Matmul: return "matmul";
@@ -85,7 +87,15 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             if (i->integer) out << " value=" << *i->integer;
             if (i->boolean) out << " value=" << (*i->boolean ? "true" : "false");
             if (i->op == Op::Call) out << " @" << i->callee;
-            if (i->op == Op::LoadBinding) out << " $" << i->binding;
+            if (i->op == Op::LoadBinding || i->op == Op::Move || i->op == Op::MutableBorrow) out << " $" << i->binding;
+            if (i->op == Op::Call && !i->argumentAccess.empty()) {
+                out << " access=[";
+                for (std::size_t k=0;k<i->argumentAccess.size();++k) {
+                    if (k) out << ',';
+                    out << (i->argumentAccess[k]==AccessMode::Read?"read":i->argumentAccess[k]==AccessMode::MutableBorrow?"borrow_mut":"move");
+                }
+                out << ']';
+            }
             if (i->op == Op::Sum) out << " axis=" << i->axis;
             if (i->borrowedView) out << " borrowed_view";
             if (!i->shape.extents.empty()) {
@@ -134,7 +144,8 @@ std::string dump(const Module& m) {
     for (const auto& i : m.imports) out << "import " << i.path << " as " << i.alias << " unresolved\n";
     for (const auto& f : m.functions) {
         out << "fn @" << f.id << ' ' << f.name << " -> " << typeName(f.result) << '\n';
-        for (const auto& p : f.parameters) out << "  param %" << p.id << " $" << p.binding << ' ' << p.name << ':' << typeName(p.type) << " read_only\n";
+        for (const auto& p : f.parameters) out << "  param %" << p.id << " $" << p.binding << ' ' << p.name << ':' << typeName(p.type) << ' ' <<
+            (p.access==AccessMode::Read?"read":p.access==AccessMode::MutableBorrow?"borrow_mut":"move") << '\n';
         block(out, f.body);
     }
     out << "initializer\n"; block(out, m.initializer);

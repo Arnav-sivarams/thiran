@@ -10,7 +10,7 @@ using frontend::SourceSpan;
 enum class TokenKind {
     Identifier, Integer, Real, String, Newline, End,
     Let, Mut, Fn, Export, Return, Import, As, True, False,
-    If, Else, For, In, While, Break, Continue, Struct,
+    If, Else, For, In, While, Break, Continue, Struct, Borrow, Copy, Move,
     Plus, Minus, Star, DotStar, Slash, DotSlash, Equal, Colon,
     Comma, Semicolon, Dot, LeftParen, RightParen, LeftBracket,
     RightBracket, LeftBrace, RightBrace, Less, Greater, Arrow

@@ -34,6 +34,7 @@ set(CORE_SOURCES ${SOURCES})
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/main\\.cpp$")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/frontend/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/semantic/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/analysis/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -47,6 +48,9 @@ add_library(thiran_v0_semantic STATIC
     src/semantic/v0/Verifier.cpp
     src/semantic/v0/Evaluator.cpp)
 target_link_libraries(thiran_v0_semantic PUBLIC thiran_v0_frontend)
+
+add_library(thiran_v0_analysis STATIC src/analysis/v0/Ownership.cpp)
+target_link_libraries(thiran_v0_analysis PUBLIC thiran_v0_semantic)
 
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
@@ -70,6 +74,10 @@ if(BUILD_TESTING)
     add_executable(v0_semantic_tests tests/semantic/v0/SemanticTests.cpp)
     target_link_libraries(v0_semantic_tests PRIVATE thiran_v0_semantic)
     add_test(NAME V0SemanticTests COMMAND v0_semantic_tests)
+
+    add_executable(v0_ownership_tests tests/analysis/v0/OwnershipTests.cpp)
+    target_link_libraries(v0_ownership_tests PRIVATE thiran_v0_analysis)
+    add_test(NAME V0OwnershipTests COMMAND v0_ownership_tests)
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)
