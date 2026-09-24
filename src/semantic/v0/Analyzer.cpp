@@ -318,9 +318,132 @@ private:
         Instruction i; i.op=op; i.span=e.span; i.operands={a.id,b.id};
         return emit(c,std::move(i),{type,shape,constant});
     }
+    static void collectInstructions(const Block& block,std::map<ValueId,const Instruction*>& instructions,
+                                    std::vector<ValueId>& returns) {
+        for (const auto& step:block.steps) {
+            if (const auto* i=std::get_if<Instruction>(&step)) instructions[i->id]=i;
+            else if (const auto* flow=std::get_if<Flow>(&step); flow && flow->kind==Flow::Kind::Return && flow->value)
+                returns.push_back(*flow->value);
+            else if (const auto* structured=std::get_if<Structured>(&step)) {
+                if (structured->thenBlock) collectInstructions(*structured->thenBlock,instructions,returns);
+                if (structured->elseBlock) collectInstructions(*structured->elseBlock,instructions,returns);
+                if (structured->conditionBlock) collectInstructions(*structured->conditionBlock,instructions,returns);
+                if (structured->bodyBlock) collectInstructions(*structured->bodyBlock,instructions,returns);
+            }
+        }
+    }
+    static std::optional<ShapeFact> scanElementShape(const Function& step,std::size_t element) {
+        if (step.result.kind!=TypeKind::Tuple || element>=step.result.elements.size()) return {};
+        if (step.result.elements[element].kind!=TypeKind::Tensor) return ShapeFact{};
+        std::map<ValueId,const Instruction*> instructions;
+        std::vector<ValueId> returns;
+        collectInstructions(step.body,instructions,returns);
+        std::optional<ShapeFact> shape;
+        for (auto returned:returns) {
+            auto tuple=instructions.find(returned);
+            if (tuple==instructions.end() || tuple->second->op!=Op::Tuple ||
+                element>=tuple->second->operands.size()) return {};
+            auto value=instructions.find(tuple->second->operands[element]);
+            ShapeFact candidate;
+            if (value!=instructions.end()) candidate=value->second->shape;
+            else {
+                bool found=false;
+                for (const auto& parameter:step.parameters) if (parameter.id==tuple->second->operands[element]) {
+                    candidate=parameter.shape; found=true; break;
+                }
+                if (!found) return {};
+            }
+            if (candidate.extents.size()!=step.result.elements[element].rank) return {};
+            for (auto extent:candidate.extents) if (!extent) return {};
+            if (shape && *shape!=candidate) return {};
+            shape=candidate;
+        }
+        return shape;
+    }
+    static bool scanRuntimeType(const Type& type) {
+        if (type==scalar(TypeKind::I64) || type==scalar(TypeKind::F32) || type==scalar(TypeKind::Bool)) return true;
+        if (type.kind==TypeKind::Tensor) return type.elements.size()==1 &&
+            (type.elements[0]==scalar(TypeKind::I64) || type.elements[0]==scalar(TypeKind::F32)) && type.rank<=2;
+        if (type.kind==TypeKind::Tuple) {
+            for (const auto& element:type.elements) if (!scanRuntimeType(element)) return false;
+            return true;
+        }
+        return false;
+    }
+    Located scan(const Expr& e,const CallExpr& n,BlockContext& c) {
+        if (n.arguments.size()<3) fail(e.span,"TH012-ARITY","scan expects step, inputs, initial state, and optional captures");
+        const auto* stepName=std::get_if<IdentifierExpr>(&n.arguments[0]->node);
+        if (!stepName) fail(n.arguments[0]->span,"TH012-STEP","scan step must name a semantic function");
+        auto found=names_.find(stepName->name);
+        if (found==names_.end()) fail(n.arguments[0]->span,"TH012-STEP","unknown scan step function "+stepName->name);
+        ensure(found->second);
+        const auto& step=result_.functions[found->second-1];
+        if (step.parameters.size()!=n.arguments.size()-1)
+            fail(e.span,"TH012-STEP-ARITY","scan arguments disagree with the step signature");
+        for (const auto& parameter:step.parameters) if (parameter.access!=AccessMode::Read)
+            fail(parameter.span,"TH012-STEP-ACCESS","scan step parameters must use read access");
+        if (step.result.kind!=TypeKind::Tuple || step.result.elements.size()!=2)
+            fail(step.span,"TH012-STEP-RESULT","scan step must return exactly (output, next_state)");
+
+        auto sequence=expr(*n.arguments[1],c);
+        auto state=expr(*n.arguments[2],c);
+        if (!isTensor(sequence.fact.type) || sequence.fact.type.rank<1 || sequence.fact.type.rank>2 ||
+            (sequence.fact.type.elements[0]!=scalar(TypeKind::I64) && sequence.fact.type.elements[0]!=scalar(TypeKind::F32)))
+            fail(n.arguments[1]->span,"TH012-INPUT-TYPE","scan inputs must be a rank-1/2 i64 or f32 tensor");
+        Type element=sequence.fact.type.rank==1 ? sequence.fact.type.elements[0] :
+            tensor(sequence.fact.type.elements[0],sequence.fact.type.rank-1);
+        if (step.parameters[0].type!=element)
+            fail(n.arguments[1]->span,"TH012-INPUT-TYPE","scan element type disagrees with the step input parameter");
+        if (step.parameters[1].type!=state.fact.type)
+            fail(n.arguments[2]->span,"TH012-STATE-TYPE","initial state type disagrees with the step state parameter");
+        if (!scanRuntimeType(state.fact.type))
+            fail(n.arguments[2]->span,"TH012-STATE-TYPE","initial state type is not executable by reference scan");
+        if (step.result.elements[1]!=state.fact.type)
+            fail(step.span,"TH012-NEXT-STATE-TYPE","step next-state type disagrees with the initial state contract");
+
+        const auto& output=step.result.elements[0];
+        const bool scalarOutput=output==scalar(TypeKind::I64) || output==scalar(TypeKind::F32);
+        const bool vectorOutput=output.kind==TypeKind::Tensor && output.rank==1 && output.elements.size()==1 &&
+            (output.elements[0]==scalar(TypeKind::I64) || output.elements[0]==scalar(TypeKind::F32));
+        if (!scalarOutput && !vectorOutput)
+            fail(step.span,"TH012-OUTPUT-TYPE","scan output must be an i64/f32 scalar or rank-1 tensor");
+        ShapeFact outputShape;
+        if (vectorOutput) {
+            auto inferred=scanElementShape(step,0);
+            if (!inferred) fail(step.span,"TH012-OUTPUT-SHAPE","tensor scan output requires one invariant statically known shape");
+            outputShape=*inferred;
+        }
+        if (state.fact.type.kind==TypeKind::Tensor) {
+            auto nextShape=scanElementShape(step,1);
+            bool initialKnown=std::all_of(state.fact.shape.extents.begin(),state.fact.shape.extents.end(),
+                [](const auto& extent){ return extent.has_value(); });
+            if (initialKnown && nextShape && state.fact.shape!=*nextShape)
+                fail(step.span,"TH012-STATE-SHAPE","known next-state shape changes the carried-state contract");
+        }
+
+        Structured structured; structured.kind=Structured::Kind::Scan; structured.span=e.span;
+        structured.stepFunction=step.id; structured.sequence=sequence.id; structured.initialState=state.id;
+        structured.outputElementType=output; structured.outputElementShape=outputShape;
+        for (std::size_t k=3;k<n.arguments.size();++k) {
+            auto capture=expr(*n.arguments[k],c);
+            if (capture.fact.type!=step.parameters[k-1].type)
+                fail(n.arguments[k]->span,"TH012-CAPTURE-TYPE","scan capture type disagrees with the step parameter");
+            if (!scanRuntimeType(capture.fact.type))
+                fail(n.arguments[k]->span,"TH012-CAPTURE-TYPE","scan capture type is not executable by reference scan");
+            structured.captures.push_back(capture.id);
+        }
+        Type collected=tensor(scalarOutput?output:output.elements[0],output.rank+1);
+        Type resultType{TypeKind::Tuple,{collected,state.fact.type},0};
+        structured.result=nextValue_++;
+        c.block.steps.emplace_back(structured);
+        Fact fact{resultType,{}, {}};
+        c.facts[structured.result]=fact;
+        return {structured.result,fact};
+    }
     Located call(const Expr& e, const CallExpr& n, BlockContext& c) {
         auto* name=std::get_if<IdentifierExpr>(&n.callee->node);
         if (!name) fail(e.span,"TH005-UNKNOWN-FUNCTION","callee must be a declared function or sum intrinsic");
+        if (name->name=="scan") return scan(e,n,c);
         if (name->name=="sum") {
             if (n.arguments.size()!=2) fail(e.span,"TH005-ARITY","sum expects two arguments");
             auto a=expr(*n.arguments[0],c), axis=expr(*n.arguments[1],c);

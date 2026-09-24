@@ -97,7 +97,11 @@ DifferentiationResult differentiate(const semantic::Module& source,const analysi
         if (effect->second.kinds & rejected) diagnostic(result,"AD-ELIGIBILITY-EFFECT","function has a rejected mutation/RNG/IO/Transfer/Async effect");
     }
     for (const auto& step:primal->body.steps) {
-        if (std::holds_alternative<Structured>(step)) diagnostic(result,"AD-ELIGIBILITY-CONTROL","structured control-flow AD is deferred");
+        if (const auto* structured=std::get_if<Structured>(&step))
+            diagnostic(result,structured->kind==Structured::Kind::Scan?"AD-ELIGIBILITY-SCAN":"AD-ELIGIBILITY-CONTROL",
+                structured->kind==Structured::Kind::Scan?
+                    "reverse-mode scan requires executed-state saves, reverse iteration, and stack/unstack adjoints not present in TH-010":
+                    "structured control-flow AD is deferred");
         else if (const auto* w=std::get_if<BindingWrite>(&step); w && !w->declaration)
             diagnostic(result,"AD-ELIGIBILITY-MUTATION","rebinding/mutation AD is deferred");
         else if (const auto* i=std::get_if<Instruction>(&step); i && !eligibleOp(i->op))

@@ -1,6 +1,7 @@
 #include "backend/v0/NativeCpu.hpp"
 #include "semantic/v0/Verifier.hpp"
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <map>
 #include <set>
@@ -145,6 +146,17 @@ NativeResult extractStrictNative(const semantic::Module& m,const analysis::Owner
     for(const auto& x:m.functions) if(x.name==name) { f=&x; ++count; }
     if(!f || count!=1) return fail("exactly one named function required");
     if(standalone && (name!="main" || !f->parameters.empty())) return fail("standalone main must have zero parameters");
+    std::function<bool(const semantic::Block&)> containsScan=[&](const semantic::Block& block) {
+        for(const auto& step:block.steps) if(const auto* structured=std::get_if<semantic::Structured>(&step)) {
+            if(structured->kind==semantic::Structured::Kind::Scan) return true;
+            if(structured->thenBlock && containsScan(*structured->thenBlock)) return true;
+            if(structured->elseBlock && containsScan(*structured->elseBlock)) return true;
+            if(structured->conditionBlock && containsScan(*structured->conditionBlock)) return true;
+            if(structured->bodyBlock && containsScan(*structured->bodyBlock)) return true;
+        }
+        return false;
+    };
+    if(containsScan(f->body)) return fail("Scan lowering deferred","Scan");
     if(!i64(f->result) && !tensorI64(f->result)) return fail("result type");
     auto effects=facts.functionEffects.find(f->id);
     if(effects==facts.functionEffects.end() ||
@@ -175,7 +187,9 @@ NativeResult extractStrictNative(const semantic::Module& m,const analysis::Owner
             if(flow->kind!=semantic::Flow::Kind::Return || !flow->value) return fail("non-return flow");
             r.output=*flow->value; continue;
         }
-        if(std::holds_alternative<semantic::Structured>(step)) return fail("structured control flow","Structured");
+        if(const auto* structured=std::get_if<semantic::Structured>(&step))
+            return fail(structured->kind==semantic::Structured::Kind::Scan?"Scan lowering deferred":"structured control flow",
+                        structured->kind==semantic::Structured::Kind::Scan?"Scan":"Structured");
         const auto& i=std::get<semantic::Instruction>(step);
         RegionNode n; n.id=i.id; n.type=i.type; n.shape=i.shape; n.span=i.span; n.dependencies=i.operands;
         switch(i.op) {

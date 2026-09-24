@@ -69,12 +69,19 @@ struct Block;
 struct BindingWrite { BindingId binding = 0; ValueId value = 0; bool declaration = false; SourceSpan span; };
 struct Flow { enum class Kind { Return, Break, Continue }; Kind kind = Kind::Return; std::optional<ValueId> value; SourceSpan span; };
 struct Structured {
-    enum class Kind { If, ForRange, While }; Kind kind = Kind::If;
+    enum class Kind { If, ForRange, While, Scan }; Kind kind = Kind::If;
     SourceSpan span;
     ValueId condition = 0, start = 0, end = 0;
     BindingId induction = 0;
     std::shared_ptr<Block> thenBlock, elseBlock, conditionBlock, bodyBlock;
     std::optional<ValueId> conditionResult;
+    // Scan is a value-producing structured operation. The referenced step
+    // function is retained once and is invoked in leading-axis order.
+    FunctionId stepFunction = 0;
+    ValueId sequence = 0, initialState = 0, result = 0;
+    std::vector<ValueId> captures;
+    Type outputElementType;
+    ShapeFact outputElementShape;
 };
 using Step = std::variant<Instruction, Check, BindingWrite, Flow, Structured>;
 struct ParameterValue { ValueId id = 0; std::string name; Type type; ShapeFact shape; SourceSpan span;

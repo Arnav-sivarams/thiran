@@ -138,6 +138,10 @@ if(BUILD_TESTING)
     target_compile_definitions(v0_training_tests PRIVATE THIRAN_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME V0TrainingTests COMMAND v0_training_tests)
 
+    add_executable(v0_scan_tests tests/semantic/v0/ScanTests.cpp)
+    target_link_libraries(v0_scan_tests PRIVATE thiran_v0_autodiff thiran_v0_native_cpu)
+    add_test(NAME V0ScanTests COMMAND v0_scan_tests)
+
     add_executable(v0_storage_tests tests/storage/v0/StorageTests.cpp)
     target_link_libraries(v0_storage_tests PRIVATE thiran_v0_storage)
     add_test(NAME V0StorageTests COMMAND v0_storage_tests)

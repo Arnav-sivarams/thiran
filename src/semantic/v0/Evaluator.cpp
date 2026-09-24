@@ -320,6 +320,68 @@ bool runtimeType(const RuntimeValue& v,const Type& type) {
     }
     return false;
 }
+bool sameRuntimeShape(const RuntimeValue& a,const RuntimeValue& b,const Type& type) {
+    if (type.kind==TypeKind::Tensor) {
+        const auto* x=std::get_if<RuntimeTensor>(&a.data);
+        const auto* y=std::get_if<RuntimeTensor>(&b.data);
+        return x && y && x->shape==y->shape;
+    }
+    if (type.kind==TypeKind::Tuple) {
+        const auto* x=std::get_if<RuntimeTuple>(&a.data);
+        const auto* y=std::get_if<RuntimeTuple>(&b.data);
+        if (!x || !y || x->size()!=type.elements.size() || y->size()!=type.elements.size()) return false;
+        for (std::size_t k=0;k<type.elements.size();++k)
+            if (!sameRuntimeShape((*x)[k],(*y)[k],type.elements[k])) return false;
+    }
+    return true;
+}
+RuntimeValue leadingElement(const RuntimeTensor& sequence,std::int64_t index) {
+    if (sequence.shape.empty() || index<0 || index>=sequence.shape[0]) fail("TH012-INPUT-BOUNDS");
+    if (sequence.shape.size()==1) {
+        if (sequence.dtype==TypeKind::F32) return RuntimeValue{sequence.f32Values.at(static_cast<std::size_t>(index))};
+        return RuntimeValue{sequence.values.at(static_cast<std::size_t>(index))};
+    }
+    if (sequence.shape.size()!=2) fail("TH012-INPUT-RANK");
+    const auto width=static_cast<std::size_t>(sequence.shape[1]);
+    const auto begin=static_cast<std::size_t>(index)*width;
+    RuntimeTensor result; result.dtype=sequence.dtype; result.shape={sequence.shape[1]};
+    if (sequence.dtype==TypeKind::F32)
+        result.f32Values.assign(sequence.f32Values.begin()+static_cast<std::ptrdiff_t>(begin),
+                                sequence.f32Values.begin()+static_cast<std::ptrdiff_t>(begin+width));
+    else
+        result.values.assign(sequence.values.begin()+static_cast<std::ptrdiff_t>(begin),
+                             sequence.values.begin()+static_cast<std::ptrdiff_t>(begin+width));
+    return RuntimeValue{std::move(result)};
+}
+RuntimeValue stackOutputs(const Structured& scan,const std::vector<RuntimeValue>& outputs) {
+    if (outputs.size()>static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        fail("TH005-RESOURCE-LIMIT");
+    const auto length=static_cast<std::int64_t>(outputs.size());
+    const bool scalarOutput=scan.outputElementType==scalar(TypeKind::I64) ||
+        scan.outputElementType==scalar(TypeKind::F32);
+    const auto dtype=scalarOutput?scan.outputElementType.kind:scan.outputElementType.elements.at(0).kind;
+    RuntimeTensor result; result.dtype=dtype; result.shape.push_back(length);
+    for (auto extent:scan.outputElementShape.extents) result.shape.push_back(*extent);
+    const auto expected=count(result.shape);
+    if (dtype==TypeKind::F32) result.f32Values.reserve(expected); else result.values.reserve(expected);
+    for (const auto& output:outputs) {
+        if (!runtimeType(output,scan.outputElementType)) fail("TH012-OUTPUT-TYPE");
+        if (scalarOutput) {
+            if (dtype==TypeKind::F32) result.f32Values.push_back(floatValue(output));
+            else result.values.push_back(integerValue(output));
+            continue;
+        }
+        const auto& tensor=tensorValue(output);
+        std::vector<std::int64_t> contract;
+        for (auto extent:scan.outputElementShape.extents) contract.push_back(*extent);
+        if (tensor.shape!=contract) fail("TH012-OUTPUT-SHAPE");
+        if (dtype==TypeKind::F32) result.f32Values.insert(result.f32Values.end(),tensor.f32Values.begin(),tensor.f32Values.end());
+        else result.values.insert(result.values.end(),tensor.values.begin(),tensor.values.end());
+    }
+    if ((dtype==TypeKind::F32?result.f32Values.size():result.values.size())!=expected)
+        fail("TH012-OUTPUT-SHAPE");
+    return RuntimeValue{std::move(result)};
+}
 class Evaluator {
 public:
     explicit Evaluator(const Module& module):module_(module) {}
@@ -400,7 +462,7 @@ private:
                         ++i;
                     }
                     bindings.erase(s->induction);
-                } else {
+                } else if (s->kind==Structured::Kind::While) {
                     while (true) {
                         guardIteration();
                         auto conditionSignal=execute(*s->conditionBlock,values,bindings);
@@ -410,6 +472,37 @@ private:
                         if (signal.kind==Signal::Kind::Return) return signal;
                         if (signal.kind==Signal::Kind::Break) break;
                     }
+                } else {
+                    const auto& sequence=tensorValue(values.at(s->sequence));
+                    if (sequence.shape.empty() || sequence.shape[0]<0) fail("TH012-INPUT-BOUND");
+                    RuntimeValue current=values.at(s->initialState);
+                    const auto& stepFunction=module_.functions.at(s->stepFunction-1);
+                    std::vector<RuntimeValue> outputs;
+                    outputs.reserve(static_cast<std::size_t>(sequence.shape[0]));
+                    for (std::int64_t index=0;index<sequence.shape[0];++index) {
+                        guardIteration();
+                        std::vector<RuntimeValue> arguments;
+                        arguments.push_back(leadingElement(sequence,index));
+                        arguments.push_back(current);
+                        for (auto capture:s->captures) arguments.push_back(values.at(capture));
+                        auto returned=call(stepFunction.id,arguments);
+                        const auto* pair=std::get_if<RuntimeTuple>(&returned.data);
+                        if (!pair || pair->size()!=2) fail("TH012-STEP-CONTRACT");
+                        if (!runtimeType((*pair)[0],s->outputElementType)) fail("TH012-OUTPUT-TYPE");
+                        if (s->outputElementType.kind==TypeKind::Tensor) {
+                            std::vector<std::int64_t> contract;
+                            for (auto extent:s->outputElementShape.extents) contract.push_back(*extent);
+                            if (tensorValue((*pair)[0]).shape!=contract) fail("TH012-OUTPUT-SHAPE");
+                        }
+                        if (!runtimeType((*pair)[1],stepFunction.result.elements[1])) fail("TH012-NEXT-STATE-TYPE");
+                        if (!sameRuntimeShape(current,(*pair)[1],stepFunction.result.elements[1])) fail("TH012-STATE-SHAPE");
+                        outputs.push_back((*pair)[0]);
+                        current=(*pair)[1];
+                    }
+                    RuntimeTuple result;
+                    result.push_back(stackOutputs(*s,outputs));
+                    result.push_back(std::move(current));
+                    values[s->result]=RuntimeValue{std::move(result)};
                 }
                 continue;
             }

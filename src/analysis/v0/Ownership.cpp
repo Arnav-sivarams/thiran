@@ -87,7 +87,7 @@ public:
                     auto yes=block(*s->thenBlock,exit,breakExit,continueExit,loop);
                     auto no=s->elseBlock?block(*s->elseBlock,exit,breakExit,continueExit,loop):exit;
                     exit=unite(std::move(yes),no);
-                } else {
+                } else if (s->kind==Structured::Kind::ForRange || s->kind==Structured::Kind::While) {
                     Live head=exit;
                     bool converged=false;
                     for (std::size_t n=0;n<=universe.size()+1;++n) {
@@ -104,6 +104,8 @@ public:
                         if (s->kind==Structured::Kind::While) block(*s->conditionBlock,head);
                     }
                     exit=head;
+                } else {
+                    after[s->result]=exit;
                 }
             }
         }
@@ -239,6 +241,37 @@ private:
             auto roots=allRoots(argument); value.viewRoots.insert(roots.begin(),roots.end());
         }
         return value;
+    }
+    ResourceValue scanState(ValueId id,const Type& type,const std::vector<ResourceValue>& possible,
+                            std::uint32_t path=2) {
+        if (!resourceType(type)) return {};
+        if (type.kind==TypeKind::Tuple) {
+            ResourceValue result; result.kind=ProvenanceKind::PossibleAlias;
+            for (std::size_t k=0;k<type.elements.size();++k)
+                result.elements.push_back(scanState(id,type.elements[k],possible,
+                    path*64+static_cast<std::uint32_t>(k+1)));
+            return result;
+        }
+        auto result=newAt(id,path,ProvenanceKind::Fresh);
+        result.kind=ProvenanceKind::PossibleAlias;
+        for (const auto& candidate:possible) {
+            auto resources=allResources(candidate); result.resources.insert(resources.begin(),resources.end());
+            auto roots=allRoots(candidate); result.viewRoots.insert(roots.begin(),roots.end());
+        }
+        return result;
+    }
+    ResourceValue scanResult(const Structured& scan) {
+        Type collected=tensor(scan.outputElementType.kind==TypeKind::Tensor?
+            scan.outputElementType.elements.at(0):scan.outputElementType,scan.outputElementType.rank+1);
+        ResourceValue result; result.kind=ProvenanceKind::NoResource;
+        result.elements.push_back(typedFresh(scan.result,collected,ProvenanceKind::Fresh,1));
+        std::vector<ResourceValue> possible{get(scan.initialState)};
+        const auto& step=m_.functions.at(scan.stepFunction-1);
+        const auto& stateType=step.result.elements.at(1);
+        for (std::size_t k=0;k<scan.captures.size();++k)
+            if (step.parameters.at(k+2).type==stateType) possible.push_back(get(scan.captures[k]));
+        result.elements.push_back(scanState(scan.result,stateType,possible));
+        return result;
     }
     const BindingFact* binding(const State& state,BindingId id) const {
         auto it=state.find(id); return it==state.end()?nullptr:&it->second;
@@ -420,7 +453,7 @@ private:
                         paths.continues.insert(paths.continues.end(),no.continues.begin(),no.continues.end());
                         paths.returns.insert(paths.returns.end(),yes.returns.begin(),yes.returns.end());
                         paths.returns.insert(paths.returns.end(),no.returns.begin(),no.returns.end());
-                    } else {
+                    } else if (s->kind==Structured::Kind::ForRange || s->kind==Structured::Kind::While) {
                         State head=state, exit=state;
                         bool converged=false;
                         for (unsigned count=0;count<512;++count) {
@@ -444,6 +477,9 @@ private:
                         if (!converged)
                             diagnostic(s->span,"TH006-ANALYSIS-INCONCLUSIVE","loop ownership state did not reach a bounded fixed point");
                         next.push_back(merge(exit,head,state));
+                    } else {
+                        remember(s->result,scanResult(*s));
+                        next.push_back(std::move(state));
                     }
                 } else next.push_back(std::move(state));
             }
@@ -466,26 +502,35 @@ void effects(const semantic::Module& m,OwnershipAnalysisResult& r) {
                 summary.mutatedParameters.insert(k);
             }
     }
-    std::function<void(const Block&,FunctionEffects&,std::set<FunctionId>&)> scan =
-        [&](const Block& b,FunctionEffects& out,std::set<FunctionId>& calls) {
+    std::map<FunctionId,bool> hasScan;
+    std::function<void(const Block&,FunctionEffects&,std::set<FunctionId>&,FunctionId)> scan =
+        [&](const Block& b,FunctionEffects& out,std::set<FunctionId>& calls,FunctionId owner) {
             for (const auto& step:b.steps) {
                 if (std::holds_alternative<Check>(step)) out.kinds|=bit(EffectKind::MayTrap);
                 if (const auto* i=std::get_if<Instruction>(&step)) {
                     if (i->op==Op::Call) calls.insert(i->callee);
                     if (i->op==Op::MutableBorrow) out.kinds|=bit(EffectKind::Mutates);
-                    if (i->effect==EffectClass::CheckedFailure && i->op!=Op::Call)
-                        out.kinds|=bit(EffectKind::MayTrap);
+                    if (i->op!=Op::Call) switch (i->effect) {
+                        case EffectClass::Pure: break;
+                        case EffectClass::CheckedFailure: out.kinds|=bit(EffectKind::MayTrap); break;
+                        case EffectClass::Mutation: out.kinds|=bit(EffectKind::Mutates); break;
+                        case EffectClass::Rng: out.kinds|=bit(EffectKind::RNG); break;
+                        case EffectClass::Io: out.kinds|=bit(EffectKind::IO); break;
+                        case EffectClass::Transfer: out.kinds|=bit(EffectKind::Transfer); break;
+                        case EffectClass::Async: out.kinds|=bit(EffectKind::Async); break;
+                    }
                 }
                 if (const auto* s=std::get_if<Structured>(&step)) {
-                    if (s->thenBlock) scan(*s->thenBlock,out,calls);
-                    if (s->elseBlock) scan(*s->elseBlock,out,calls);
-                    if (s->conditionBlock) scan(*s->conditionBlock,out,calls);
-                    if (s->bodyBlock) scan(*s->bodyBlock,out,calls);
+                    if (s->kind==Structured::Kind::Scan) { calls.insert(s->stepFunction); hasScan[owner]=true; }
+                    if (s->thenBlock) scan(*s->thenBlock,out,calls,owner);
+                    if (s->elseBlock) scan(*s->elseBlock,out,calls,owner);
+                    if (s->conditionBlock) scan(*s->conditionBlock,out,calls,owner);
+                    if (s->bodyBlock) scan(*s->bodyBlock,out,calls,owner);
                 }
             }
         };
     std::map<FunctionId,std::set<FunctionId>> calls;
-    for (const auto& f:m.functions) scan(f.body,r.functionEffects[f.id],calls[f.id]);
+    for (const auto& f:m.functions) scan(f.body,r.functionEffects[f.id],calls[f.id],f.id);
     for (std::size_t n=0;n<m.functions.size()+1;++n) {
         bool changed=false;
         for (const auto& f:m.functions) for (auto callee:calls[f.id]) {
@@ -495,8 +540,23 @@ void effects(const semantic::Module& m,OwnershipAnalysisResult& r) {
         }
         if (!changed) break;
     }
+    constexpr EffectSet unsupported=bit(EffectKind::Mutates)|bit(EffectKind::RNG)|bit(EffectKind::IO)|
+        bit(EffectKind::Transfer)|bit(EffectKind::Async);
+    std::function<void(const Block&)> validateScans=[&](const Block& block) {
+        for (const auto& step:block.steps) if (const auto* structured=std::get_if<Structured>(&step)) {
+            if (structured->kind==Structured::Kind::Scan &&
+                (r.functionEffects[structured->stepFunction].kinds&unsupported))
+                r.diagnostics.push_back({m.source,"TH012-UNSUPPORTED-EFFECT",
+                    "scan step has mutation/RNG/IO/Transfer/Async effects",structured->span});
+            if (structured->thenBlock) validateScans(*structured->thenBlock);
+            if (structured->elseBlock) validateScans(*structured->elseBlock);
+            if (structured->conditionBlock) validateScans(*structured->conditionBlock);
+            if (structured->bodyBlock) validateScans(*structured->bodyBlock);
+        }
+    };
+    for (const auto& f:m.functions) validateScans(f.body);
     for (auto& [id,summary]:r.functionEffects)
-        summary.pureTensorCandidate=(summary.kinds==0);
+        summary.pureTensorCandidate=(summary.kinds==0 && !hasScan[id]);
 }
 std::vector<semantic::SemanticDiagnostic> ownershipIRIssues(const semantic::Module& m) {
     std::vector<semantic::SemanticDiagnostic> errors;
@@ -556,6 +616,49 @@ std::vector<semantic::SemanticDiagnostic> ownershipIRIssues(const semantic::Modu
     }
     return errors;
 }
+void scanOwnershipIssues(const semantic::Module& m,OwnershipAnalysisResult& r) {
+    auto returnedValues=[](const Block& body) {
+        std::vector<ValueId> returned;
+        std::function<void(const Block&)> visit=[&](const Block& block) {
+            for (const auto& step:block.steps) {
+                if (const auto* flow=std::get_if<Flow>(&step); flow && flow->kind==Flow::Kind::Return && flow->value)
+                    returned.push_back(*flow->value);
+                if (const auto* structured=std::get_if<Structured>(&step)) {
+                    if (structured->thenBlock) visit(*structured->thenBlock);
+                    if (structured->elseBlock) visit(*structured->elseBlock);
+                    if (structured->conditionBlock) visit(*structured->conditionBlock);
+                    if (structured->bodyBlock) visit(*structured->bodyBlock);
+                }
+            }
+        };
+        visit(body); return returned;
+    };
+    std::function<void(const Block&)> inspect=[&](const Block& block) {
+        for (const auto& item:block.steps) if (const auto* scan=std::get_if<Structured>(&item)) {
+            if (scan->kind==Structured::Kind::Scan && scan->stepFunction && scan->stepFunction<=m.functions.size()) {
+                const auto& step=m.functions[scan->stepFunction-1];
+                const auto values=r.valueProvenance.find(step.id);
+                if (values!=r.valueProvenance.end() && !step.parameters.empty()) {
+                    auto input=values->second.find(step.parameters[0].id);
+                    if (input!=values->second.end()) for (auto returned:returnedValues(step.body)) {
+                        auto value=values->second.find(returned);
+                        if (value!=values->second.end() && value->second.elements.size()==2 &&
+                            intersects(allResources(input->second),allResources(value->second.elements[1]))) {
+                            r.diagnostics.push_back({m.source,"TH012-INPUT-BORROW-ESCAPE",
+                                "scan next state cannot retain the borrowed leading-axis input element",scan->span});
+                            break;
+                        }
+                    }
+                }
+            }
+            if (scan->thenBlock) inspect(*scan->thenBlock);
+            if (scan->elseBlock) inspect(*scan->elseBlock);
+            if (scan->conditionBlock) inspect(*scan->conditionBlock);
+            if (scan->bodyBlock) inspect(*scan->bodyBlock);
+        }
+    };
+    for (const auto& function:m.functions) inspect(function.body);
+}
 }
 OwnershipAnalysisResult analyze(const semantic::Module& module) {
     OwnershipAnalysisResult result;
@@ -570,6 +673,7 @@ OwnershipAnalysisResult analyze(const semantic::Module& module) {
     Checker checker(module,result);
     for (const auto& f:module.functions) checker.run(f.id,f);
     checker.runInitializer(module.initializer);
+    scanOwnershipIssues(module,result);
     effects(module,result);
     if (!result.diagnostics.empty())
         for (auto& [id,summary]:result.functionEffects) { (void)id; summary.pureTensorCandidate=false; }

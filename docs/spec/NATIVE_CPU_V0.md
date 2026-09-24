@@ -8,4 +8,6 @@ Tensor literals and Add results use TH-007 `storage::Tensor::materializeI64`, wi
 
 The generated standalone entry prints one canonical TH-003/TH-005 scalar/tensor observation or a canonical supported semantic failure. Unknown C++/storage/compiler defects go to stderr with nonzero status, not a `TH-SPEC-*` language error. No IDs, addresses, paths, or timestamps enter canonical output. Host C++ is required at AOT build time; the finished ELF artifact needs only ordinary host runtime libraries and no Python, PyTorch, NumPy, Triton, generated.py, compiler process, or Thiran shared library. Artifact dependency auditing is required for qualification.
 
+TH-012 structured Scan has no native lowering in this backend. STRICT_NATIVE reports `BACKEND-UNSUPPORTED: Scan lowering deferred` and `fallback: NONE`; it never invokes the reference evaluator.
+
 Native execution is structural machine-code evidence, not speed evidence. No performance superiority, stable native ABI, production CLI route, GPU support, or final backend claim is made.

@@ -356,7 +356,7 @@ private:
                     expect(TokenKind::Mut, "mutable parameter requires 'borrow mut'");
                     access = Parameter::Access::MutableBorrow;
                 } else if (match(TokenKind::Move)) access = Parameter::Access::Consume;
-                auto type = typeSyntax(false);
+                auto type = typeSyntax();
                 function.parameters.push_back({joined(paramName.span, type.span), paramName.text, std::move(type), access});
                 softNewlines();
             } while (match(TokenKind::Comma) && (softNewlines(), !at(TokenKind::RightParen)));

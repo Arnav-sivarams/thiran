@@ -12,6 +12,16 @@ bool shapeOk(const Type& t,const ShapeFact& s) {
     return true;
 }
 bool numericScalar(const Type& t) { return t==scalar(TypeKind::I64) || t==scalar(TypeKind::F32); }
+bool scanRuntimeType(const Type& type) {
+    if (type==scalar(TypeKind::I64) || type==scalar(TypeKind::F32) || type==scalar(TypeKind::Bool)) return true;
+    if (type.kind==TypeKind::Tensor) return type.elements.size()==1 &&
+        (type.elements[0]==scalar(TypeKind::I64) || type.elements[0]==scalar(TypeKind::F32)) && type.rank<=2;
+    if (type.kind==TypeKind::Tuple) {
+        for (const auto& element:type.elements) if (!scanRuntimeType(element)) return false;
+        return true;
+    }
+    return false;
+}
 Type dtype(const Type& t) { return t.kind==TypeKind::Tensor && !t.elements.empty() ? t.elements[0] : t; }
 bool spanOk(const SourceSpan& s) {
     return s.begin.source!=frontend::invalidSourceId && s.begin.source==s.end.source &&
@@ -155,6 +165,49 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                     if (!found) err(r,"While condition result missing/non-bool");
                 }
                 if (s->bodyBlock) inspect(m,*s->bodyBlock,fn,state,r,values,shapes,slots,b.id,loopDepth+1);
+            } else if (s->kind==Structured::Kind::Scan) {
+                bool ok=s->stepFunction && s->stepFunction<=m.functions.size() && s->sequence &&
+                    s->initialState && s->result && !s->condition && !s->start && !s->end && !s->induction &&
+                    !s->thenBlock && !s->elseBlock && !s->conditionBlock && !s->bodyBlock && !s->conditionResult;
+                auto sequence=used(s->sequence),initial=used(s->initialState);
+                std::vector<Type> captures;
+                for (auto id:s->captures) captures.push_back(used(id));
+                Type collected;
+                if (ok) {
+                    const auto& stepFunction=m.functions[s->stepFunction-1];
+                    ok &= stepFunction.id==s->stepFunction && sequence.kind==TypeKind::Tensor &&
+                        sequence.rank>=1 && sequence.rank<=2 && sequence.elements.size()==1 &&
+                        (sequence.elements[0]==scalar(TypeKind::I64) || sequence.elements[0]==scalar(TypeKind::F32));
+                    Type element=sequence.rank==1 && !sequence.elements.empty()?sequence.elements[0]:
+                        tensor(sequence.elements.empty()?Type{}:sequence.elements[0],sequence.rank?sequence.rank-1:0);
+                    ok &= stepFunction.parameters.size()==captures.size()+2 && stepFunction.parameters.size()>=2 &&
+                        stepFunction.result.kind==TypeKind::Tuple && stepFunction.result.elements.size()==2 && scanRuntimeType(initial);
+                    if (stepFunction.parameters.size()==captures.size()+2 && stepFunction.parameters.size()>=2) {
+                        ok &= stepFunction.parameters[0].type==element && stepFunction.parameters[1].type==initial;
+                        for (std::size_t k=0;k<captures.size();++k)
+                            ok &= stepFunction.parameters[k+2].type==captures[k] && scanRuntimeType(captures[k]);
+                        for (const auto& parameter:stepFunction.parameters) ok &= parameter.access==AccessMode::Read;
+                    }
+                    if (stepFunction.result.kind==TypeKind::Tuple && stepFunction.result.elements.size()==2) {
+                        ok &= stepFunction.result.elements[1]==initial && stepFunction.result.elements[0]==s->outputElementType;
+                    }
+                    const bool scalarOutput=s->outputElementType==scalar(TypeKind::I64) ||
+                        s->outputElementType==scalar(TypeKind::F32);
+                    const bool vectorOutput=s->outputElementType.kind==TypeKind::Tensor &&
+                        s->outputElementType.rank==1 && s->outputElementType.elements.size()==1 &&
+                        (s->outputElementType.elements[0]==scalar(TypeKind::I64) ||
+                         s->outputElementType.elements[0]==scalar(TypeKind::F32));
+                    ok &= scalarOutput || vectorOutput;
+                    ok &= s->outputElementShape.extents.size()==(vectorOutput?1U:0U);
+                    for (auto extent:s->outputElementShape.extents) ok &= extent && *extent>=0;
+                    if (scalarOutput) collected=tensor(s->outputElementType,1);
+                    else if (vectorOutput) collected=tensor(s->outputElementType.elements[0],2);
+                }
+                if (!ok) err(r,"Scan iteration/step/result contract invalid");
+                Type resultType{TypeKind::Tuple,{collected,initial},0};
+                if (!validType(resultType)) err(r,"Scan result type invalid");
+                if (s->result!=state.value++ || values.contains(s->result)) err(r,"duplicate/nonmonotonic Scan result ValueId");
+                values.emplace(s->result,resultType); shapes.emplace(s->result,ShapeFact{});
             } else err(r,"invalid structured kind");
             continue;
         }

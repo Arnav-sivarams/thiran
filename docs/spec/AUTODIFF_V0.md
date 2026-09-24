@@ -60,3 +60,5 @@ The AD audit reports ADV01 invalid WRT ownership, ADV02 nondifferentiable WRT, A
 The TH-008 native backend remains STRICT_NATIVE and rejects f32 and AD helpers as `BACKEND-UNSUPPORTED`, with `fallback: NONE`. Reference gradient execution is not native gradient execution. No production CLI command is added. Source `stop_gradient(expr)` is an intrinsic and cannot resolve to a user function; dynamic `no_grad` is deferred.
 
 Future custom derivatives must identify the primal operation/function, differentiable parameters, saved values, derivative program, effect restrictions, and backend requirements. No model-specific operation is built in. TH-010 is first-order reverse mode only: it claims no training loop, optimizer, control-flow AD, forward mode, grad-of-grad, Hessian, Jacobian materialization, or higher-order guarantee.
+
+TH-012 structured scan is rejected specifically with `AD-ELIGIBILITY-SCAN`. Correct recurrent reverse mode requires explicit executed-iteration saves, reverse iteration, carried-state cotangents, and stack/unstack adjoints that this straight-line transform does not contain. No hidden tape or numerical approximation is substituted.

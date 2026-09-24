@@ -132,11 +132,21 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             } else if (s.kind==Structured::Kind::ForRange) {
                 out << indent << "for_range $" << s.induction << " %" << s.start << ":%" << s.end << '\n';
                 if (s.bodyBlock) block(out,*s.bodyBlock,indent+"  ");
-            } else {
+            } else if (s.kind==Structured::Kind::While) {
                 out << indent << "while\n";
                 if (s.conditionBlock) block(out,*s.conditionBlock,indent+"  ");
                 if (s.conditionResult) out << indent << "condition %" << *s.conditionResult << '\n';
                 if (s.bodyBlock) block(out,*s.bodyBlock,indent+"  ");
+            } else {
+                out << indent << "%" << s.result << " = scan @" << s.stepFunction
+                    << " %" << s.sequence << " %" << s.initialState;
+                ids(out,s.captures);
+                out << " output=" << typeName(s.outputElementType) << " shape=[";
+                for (std::size_t d=0;d<s.outputElementShape.extents.size();++d) {
+                    if (d) out << ',';
+                    if (s.outputElementShape.extents[d]) out << *s.outputElementShape.extents[d]; else out << '?';
+                }
+                out << "]\n";
             }
         }
     }
