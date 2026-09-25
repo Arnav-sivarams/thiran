@@ -54,6 +54,15 @@ The installed `thiran-model` runtime validates the bundle, supplies frozen
 parameters internally, and executes the selected native backend without the
 legacy Graph/Python route or reference evaluator.
 
+TH-019 adds a separate typed native CPU graphics runtime below the same storage
+and ownership architecture. Rank-two tensors carry geometry, colors, and
+matrices; the runtime returns fresh rank-two/rank-one framebuffer tensors.
+Transform math is naturally eligible for future TensorRegion planning, but
+homogeneous clipping, raster traversal, ordered depth tests, and exclusive
+framebuffer mutation remain structured loops. The renderer is not a scene
+graph, does not use the historical Graph/Region path, and is not forced into a
+whole-renderer dataflow DAG or TH-016 artifact ABI.
+
 ## Region formation
 
 `TopologicalRegionFormer` computes a deterministic Kahn ordering using Graph storage index as the ready-node tie-break. It forms contiguous, strategy-homogeneous Regions. A Node joins the current Region only when a direct producer is already inside it, which guarantees weak connectedness of each induced Region subgraph.
@@ -95,6 +104,8 @@ Normal `Thiran <source-file>` continues through analyses, scheduler structures, 
 - PyTorch emission remains the legacy Graph/Region execution path. The bounded
   V0 TensorRegion path also has native CPU/GPU artifacts and TH-017 model-bundle
   execution; neither path silently falls back to the other.
+- The TH-019 headless renderer is native CPU library execution over V0 storage.
+  It has no Python/framework renderer and no GPU graphics path.
 
 ## Ownership and lifetime
 
@@ -124,3 +135,8 @@ TH-016 native artifacts instead operate on the independently verified V0
 TensorRegion/PhysicalPlan path. TH-017 packages those artifacts with validated
 frozen checkpoint parameters for reference-model deployment. Neither makes a
 performance claim.
+
+TH-019 deliberately stays outside historical Graph/Region and the current
+artifact ABI. A future source-level library surface can lower tensor-eligible
+transform subregions normally while preserving structured clipping/raster
+loops and explicit mutation; no graphics-specific source language is implied.

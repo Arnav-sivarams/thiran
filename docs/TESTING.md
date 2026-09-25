@@ -129,6 +129,20 @@ unavailable, not qualified. It compares reference, CPU, and GPU predictions,
 checks TH-014 pending-resource release, records TH-015 fusion, and distinguishes
 persistent PTX from CUDA Driver JIT.
 
+TH-019 native CPU graphics qualification adds:
+
+```bash
+./build/debug/v0_graphics_tests
+ctest --test-dir build/debug -R '^V0GraphicsTests$' --output-on-failure
+```
+
+The suite covers checked transform/camera math, geometry/index validation,
+complete homogeneous frustum clipping, top-left coverage and a shared-edge
+quad, strict depth behavior in both submission orders, perspective-correct and
+clipping-created color interpolation, zero/overflow/malformed inputs, PPM
+output, and a frozen perspective-cube color/depth digest. It is a native C++
+runtime test and invokes no Python or graphics framework.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

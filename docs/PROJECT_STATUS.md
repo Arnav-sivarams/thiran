@@ -23,6 +23,7 @@ Status terms describe repository evidence, not intent.
 | JIT cache | IMPLEMENTED (LOCAL V0) | deterministic specialization keys and hit/miss tests | In-memory/process-local only | Preserve full correctness identity if extended |
 | Training checkpoints | IMPLEMENTED (REFERENCE V0) | `.thc` schema/integrity validation, transactional save, exact destroy/reload/resume tests | TH-011 f32 state and local files only; no authentication | Preserve explicit schema and optimizer-state compatibility |
 | Model deployment | IMPLEMENTED (REFERENCE V0) | `.thm` bundle, `thiran-model`, relocated CPU and physical-GPU equivalence tests | Narrow affine public ABI; trusted local native payloads; no service | Generalize only from additional accepted models |
+| CPU numerical graphics | IMPLEMENTED (HEADLESS V0) | typed Tensor geometry, six-plane clipping, top-left raster/depth/interpolation, deterministic cube and adversarial tests | Runtime/library API only; no scene graph, source syntax, artifact ABI, AD, or GPU rendering | Review the structured runtime boundary before any GPU interoperability work |
 | Adaptation | RESEARCH HYPOTHESIS | Strategy and Region infrastructure only | No profiling or runtime switching | Establish measurable policy hypotheses |
 | Triton | PARTIAL | emitter/code-generator scaffolding | Not a working execution backend | Prove legal lowering and execution independently |
 | Distributed planning | PARTIAL | partition and communication structures in normal path | Descriptive; not Region runtime movement | Define executable semantics |
