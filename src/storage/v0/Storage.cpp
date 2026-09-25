@@ -164,6 +164,14 @@ Tensor Tensor::materializeI64(std::vector<std::uint64_t> shape, const std::vecto
     if (!values.empty()) std::memcpy(d.storage.object_->bytes.data(), values.data(), d.storage.byteLength());
     return Tensor(std::move(d));
 }
+Tensor Tensor::materializeF32(std::vector<std::uint64_t> shape, const std::vector<float>& values) {
+    auto count = checkedElementCount(shape);
+    if (count != values.size()) fail("TH-SPEC-SHAPE");
+    TensorDescriptor d{DType::F32, shape, checkedRowMajorStrides(shape), 0,
+                       allocate(checkedByteCount(count, DType::F32)), false, true};
+    if (!values.empty()) std::memcpy(d.storage.object_->bytes.data(), values.data(), d.storage.byteLength());
+    return Tensor(std::move(d));
+}
 Tensor Tensor::empty(DType dtype, std::vector<std::uint64_t> shape) {
     if (checkedElementCount(shape) != 0) fail("TH-SPEC-SHAPE");
     TensorDescriptor d{dtype, shape, checkedRowMajorStrides(shape), 0, allocate(0), false, true};
@@ -185,6 +193,13 @@ std::int64_t Tensor::loadI64(const std::vector<std::uint64_t>& indices) const {
     const auto offset = checkedLogicalOffset(indices);
     std::int64_t value;
     std::memcpy(&value, descriptor_.storage.object_->bytes.data() + checkedByteCount(offset, DType::I64), sizeof(value));
+    return value;
+}
+float Tensor::loadF32(const std::vector<std::uint64_t>& indices) const {
+    if (descriptor_.dtype != DType::F32) fail("TH007-DTYPE-EXECUTION-DEFERRED");
+    const auto offset = checkedLogicalOffset(indices);
+    float value;
+    std::memcpy(&value, descriptor_.storage.object_->bytes.data() + checkedByteCount(offset, DType::F32), sizeof(value));
     return value;
 }
 void MutableTensorRef::storeI64(const std::vector<std::uint64_t>& indices, std::int64_t value) {
@@ -307,7 +322,9 @@ Tensor Tensor::reshapeView(const std::vector<std::uint64_t>& shape) const {
 }
 Tensor Tensor::reshapeCopy(const std::vector<std::uint64_t>& shape) const {
     if (checkedElementCount(shape) != checkedElementCount(descriptor_.shape)) fail("TH-SPEC-SHAPE");
-    return Tensor::materializeI64(shape, logicalI64Values());
+    if (descriptor_.dtype == DType::I64) return Tensor::materializeI64(shape, logicalI64Values());
+    if (descriptor_.dtype == DType::F32) return Tensor::materializeF32(shape, logicalF32Values());
+    fail("TH007-DTYPE-EXECUTION-DEFERRED");
 }
 std::vector<std::int64_t> Tensor::logicalI64Values() const {
     if (descriptor_.dtype != DType::I64) fail("TH007-DTYPE-EXECUTION-DEFERRED");
@@ -316,7 +333,18 @@ std::vector<std::int64_t> Tensor::logicalI64Values() const {
     visitIndices(descriptor_.shape, [&](const auto& index) { values.push_back(loadI64(index)); });
     return values;
 }
-Tensor Tensor::deepCopy() const { return Tensor::materializeI64(descriptor_.shape, logicalI64Values()); }
+std::vector<float> Tensor::logicalF32Values() const {
+    if (descriptor_.dtype != DType::F32) fail("TH007-DTYPE-EXECUTION-DEFERRED");
+    std::vector<float> values;
+    values.reserve(static_cast<std::size_t>(checkedElementCount(descriptor_.shape)));
+    visitIndices(descriptor_.shape, [&](const auto& index) { values.push_back(loadF32(index)); });
+    return values;
+}
+Tensor Tensor::deepCopy() const {
+    if (descriptor_.dtype == DType::I64) return Tensor::materializeI64(descriptor_.shape, logicalI64Values());
+    if (descriptor_.dtype == DType::F32) return Tensor::materializeF32(descriptor_.shape, logicalF32Values());
+    fail("TH007-DTYPE-EXECUTION-DEFERRED");
+}
 std::string Tensor::observe() const {
     std::ostringstream out;
     out << (descriptor_.view ? "view" : "materialized") << " " << dtypeName(descriptor_.dtype) << " shape=[";

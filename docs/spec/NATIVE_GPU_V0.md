@@ -1,0 +1,29 @@
+# TH-013 synchronous native GPU backend
+
+TH-013 adds a bounded native GPU implementation below the existing typed structured semantic IR. The device-neutral path is `verified semantic IR -> TH-006 ownership/effect facts -> TensorRegion -> backend`. `TensorRegion` remains a straight-line numerical region rather than whole-program semantic authority. Structured control, including `Structured::Scan`, stays in semantic IR and rejects explicitly when a whole function cannot be represented by the GPU subset.
+
+The first implementation adapter is CUDA, but CUDA blocks, grids, warps, streams, pointer types, PTX, and allocation APIs are not source-language constructs. `NativeGpu` is the only layer that loads the CUDA Driver API, owns device handles, supplies PTX kernels, chooses the physical device, maps work to launches, and translates driver failures. It loads `libcuda.so.1` directly and uses driver JIT loading for backend-owned PTX. It has no Python, PyTorch, Triton, JAX, TensorFlow, CuPy, generated-Python, reference-evaluator, or native-CPU execution dependency.
+
+`THIRAN_ENABLE_NATIVE_GPU` is OFF by default. A disabled build retains discovery stubs that report `GPU-BACKEND-NOT-BUILT`; it does not require CUDA. The enabled implementation needs an NVIDIA CUDA driver at runtime but does not require nvcc or CUDA headers at build time. CMake probes and reports an available CUDA compiler for diagnostics without making it a semantic or build requirement for this Driver/PTX path.
+
+## Supported region subset
+
+The GPU extractor accepts read-only scalar `i64`/`f32` parameters used by the region, materialized contiguous offset-zero row-major rank-1/rank-2 `Tensor<i64,R>` and `Tensor<f32,R>` inputs, tensor literals representable by current semantic IR, immutable aliases, tensor Negate, equal-shape tensor Add/Subtract/ElementMultiply, and full-rank Index where admitted by current semantics. Dtypes are never promoted or narrowed. Broadcasting, scalar arithmetic lowering, views, slice, transpose, matmul, sum/reduction, calls, tuples, mutation, copy/move lowering, AD helper operations, imports, structured control, and scan are backend-unsupported. Native CPU coverage remains unchanged.
+
+Every nonempty elementwise operation launches its own kernel. This is deliberately a correctness foundation, not TH-015 fusion or memory planning. Rank maps to a flat row-major element range only after the runtime has verified materialized contiguous layout. A fixed block size and computed one-dimensional grid are CUDA-adapter choices. Default IEEE f32 instructions are emitted without fast-math. Signed i64 negate/add/subtract/multiply kernels set a device error flag on overflow; the synchronized host boundary reports `TH-SPEC-I64-OVERFLOW`. Index coordinates are checked before launch and report `TH-SPEC-BOUNDS`.
+
+## Storage, transfer, ownership, and synchronization
+
+`storage::Tensor` remains host physical storage for a logical tensor. A GPU execution creates private RAII device allocations carrying dtype, shape, byte length, and a retained allocation handle. Raw device pointers never become language values. H2D input transfer, kernel execution, synchronization, and D2H result observation occur explicitly inside `executeNativeGpu`; evidence counters expose those completed runtime steps to qualification tests. There is no automatic CPU/reference retry.
+
+Immutable TensorRegion aliases share one device allocation handle. Repeated input arguments with the same host StorageObjectId, dtype, and shape share one uploaded allocation after each descriptor has independently passed type, shape, and layout validation. Explicit host deep copies have distinct StorageObjectIds and therefore distinct uploads. The backend does not mutate input allocations and does not implement copy-on-write. General cross-execution residency, caching, allocator reuse, and device-to-device transfer are not introduced.
+
+Zero-element tensors allocate zero device bytes, perform no zero-byte CUDA allocation/transfer, launch no kernel, and preserve dtype/shape on host observation. Checked TH-007 element and byte arithmetic precedes allocation and launch. Non-contiguous or view descriptors reject with `GPU-UNSUPPORTED-LAYOUT`; no hidden materialization occurs.
+
+TH-013 is synchronous. Each launched kernel is checked and followed by `cuCtxSynchronize` before error-flag observation or result publication. General streams, events, overlap, pending async ownership, and user-visible asynchronous lifetimes are outside this contract.
+
+## Failure categories
+
+Discovery and execution distinguish backend unavailable, invalid device, backend unsupported, runtime/resource/driver failure, and supported semantic failure. Driver loading, initialization, device enumeration/selection, capability, context creation, module JIT loading, symbol lookup, allocation, transfers, launch, synchronization, and result transfer are checked. RAII releases modules, allocations, contexts, and the driver library on every return path. Cleanup calls in non-throwing destructors are best-effort because no result can safely be returned from a destructor; all work is synchronized before successful result publication.
+
+GPU integration tests use return code 77 for unavailable hardware so CPU-only CI remains green while still distinguishing unavailable from pass. A skipped device suite is not TH-013 qualification; checkpoint PASS requires the same suite to execute kernels on a physical GPU.

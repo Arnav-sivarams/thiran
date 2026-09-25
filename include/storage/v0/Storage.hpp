@@ -64,18 +64,21 @@ class Tensor {
 public:
     explicit Tensor(TensorDescriptor descriptor);
     static Tensor materializeI64(std::vector<std::uint64_t> shape, const std::vector<std::int64_t>& values);
+    static Tensor materializeF32(std::vector<std::uint64_t> shape, const std::vector<float>& values);
     static Tensor empty(DType dtype, std::vector<std::uint64_t> shape);
     const TensorDescriptor& descriptor() const { return descriptor_; }
     StorageObjectId storageId() const { return descriptor_.storage.id(); }
     bool isView() const { return descriptor_.view; }
     bool isContiguousRowMajor() const { return storage::isContiguousRowMajor(descriptor_); }
     std::int64_t loadI64(const std::vector<std::uint64_t>& indices) const;
+    float loadF32(const std::vector<std::uint64_t>& indices) const;
     Tensor select(const std::vector<Selector>& selectors) const;
     Tensor transpose() const;
     Tensor reshapeView(const std::vector<std::uint64_t>& shape) const;
     Tensor reshapeCopy(const std::vector<std::uint64_t>& shape) const;
     Tensor deepCopy() const;
     std::vector<std::int64_t> logicalI64Values() const;
+    std::vector<float> logicalF32Values() const;
     std::string observe() const;
     std::string debugLayout() const;
 private:

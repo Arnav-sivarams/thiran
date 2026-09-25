@@ -68,6 +68,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "OFF"
       }
+    },
+    {
+      "name": "gpu",
+      "displayName": "Debug with native GPU backend",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/gpu",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "THIRAN_ENABLE_NATIVE_GPU": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -76,7 +87,8 @@
     { "name": "no-tests", "configurePreset": "no-tests" },
     { "name": "warnings", "configurePreset": "warnings" },
     { "name": "sanitizers", "configurePreset": "sanitizers" },
-    { "name": "install", "configurePreset": "install" }
+    { "name": "install", "configurePreset": "install" },
+    { "name": "gpu", "configurePreset": "gpu" }
   ],
   "testPresets": [
     {
@@ -97,6 +109,11 @@
     {
       "name": "sanitizers",
       "configurePreset": "sanitizers",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "gpu",
+      "configurePreset": "gpu",
       "output": { "outputOnFailure": true }
     }
   ]

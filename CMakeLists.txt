@@ -15,6 +15,19 @@ set(THIRAN_VERSION_PRERELEASE "${CMAKE_MATCH_4}")
 
 project(Thiran VERSION "${THIRAN_VERSION_MAJOR}.${THIRAN_VERSION_MINOR}.${THIRAN_VERSION_PATCH}")
 
+option(THIRAN_ENABLE_NATIVE_GPU "Build the synchronous native CUDA Driver/PTX backend" OFF)
+if(THIRAN_ENABLE_NATIVE_GPU)
+    include(CheckLanguage)
+    check_language(CUDA)
+    if(CMAKE_CUDA_COMPILER)
+        message(STATUS "Native GPU backend: enabled (CUDA compiler detected: ${CMAKE_CUDA_COMPILER})")
+    else()
+        message(STATUS "Native GPU backend: enabled (CUDA compiler not found; low-level Driver/PTX path does not require nvcc)")
+    endif()
+else()
+    message(STATUS "Native GPU backend: disabled")
+endif()
+
 configure_file(
     include/thiran/Version.hpp.in
     generated/thiran/Version.hpp
@@ -83,8 +96,16 @@ target_link_libraries(thiran_v0_training PUBLIC thiran_v0_autodiff)
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
 target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis)
 
+add_library(thiran_v0_tensor_region STATIC src/backend/v0/TensorRegion.cpp)
+target_link_libraries(thiran_v0_tensor_region PUBLIC thiran_v0_storage)
+
 add_library(thiran_v0_native_cpu STATIC src/backend/v0/NativeCpu.cpp)
-target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_storage)
+target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_tensor_region)
+
+add_library(thiran_v0_native_gpu STATIC src/backend/v0/NativeGpu.cpp)
+target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_tensor_region PRIVATE ${CMAKE_DL_LIBS})
+target_compile_definitions(thiran_v0_native_gpu PRIVATE
+    THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
 
 add_library(thiran_v0_interop STATIC src/interop/v0/NativeLibrary.cpp)
 target_link_libraries(thiran_v0_interop PUBLIC thiran_v0_analysis)
@@ -154,6 +175,17 @@ if(BUILD_TESTING)
         TH008_INCLUDE="${CMAKE_SOURCE_DIR}/include"
         TH008_BUILD="${CMAKE_BINARY_DIR}")
     add_test(NAME V0NativeCpuTests COMMAND v0_native_cpu_tests)
+
+    add_executable(v0_native_gpu_tests tests/backend/v0/NativeGpuTests.cpp)
+    target_link_libraries(v0_native_gpu_tests PRIVATE thiran_v0_native_gpu)
+    add_test(NAME V0NativeGpuTests COMMAND v0_native_gpu_tests)
+
+    if(THIRAN_ENABLE_NATIVE_GPU)
+        add_executable(v0_native_gpu_integration_tests tests/backend/v0/NativeGpuIntegrationTests.cpp)
+        target_link_libraries(v0_native_gpu_integration_tests PRIVATE thiran_v0_native_gpu)
+        add_test(NAME V0NativeGpuIntegrationTests COMMAND v0_native_gpu_integration_tests)
+        set_tests_properties(V0NativeGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
 
     add_executable(v0_buffer_tests tests/storage/v0/BufferTests.cpp)
     target_link_libraries(v0_buffer_tests PRIVATE thiran_v0_storage)
