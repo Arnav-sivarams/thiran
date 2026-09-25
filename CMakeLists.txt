@@ -15,7 +15,7 @@ set(THIRAN_VERSION_PRERELEASE "${CMAKE_MATCH_4}")
 
 project(Thiran VERSION "${THIRAN_VERSION_MAJOR}.${THIRAN_VERSION_MINOR}.${THIRAN_VERSION_PATCH}")
 
-option(THIRAN_ENABLE_NATIVE_GPU "Build the synchronous native CUDA Driver/PTX backend" OFF)
+option(THIRAN_ENABLE_NATIVE_GPU "Build the native CUDA Driver/PTX backend" OFF)
 if(THIRAN_ENABLE_NATIVE_GPU)
     include(CheckLanguage)
     check_language(CUDA)
@@ -70,6 +70,7 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/interop/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/tooling/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/autodiff/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/training/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -93,8 +94,10 @@ target_link_libraries(thiran_v0_autodiff PUBLIC thiran_v0_analysis)
 add_library(thiran_v0_training STATIC src/training/v0/Training.cpp)
 target_link_libraries(thiran_v0_training PUBLIC thiran_v0_autodiff)
 
+add_library(thiran_v0_async STATIC src/runtime/v0/Async.cpp)
+
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
-target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis)
+target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis thiran_v0_async)
 
 add_library(thiran_v0_tensor_region STATIC src/backend/v0/TensorRegion.cpp)
 target_link_libraries(thiran_v0_tensor_region PUBLIC thiran_v0_storage)
@@ -166,6 +169,10 @@ if(BUILD_TESTING)
     add_executable(v0_storage_tests tests/storage/v0/StorageTests.cpp)
     target_link_libraries(v0_storage_tests PRIVATE thiran_v0_storage)
     add_test(NAME V0StorageTests COMMAND v0_storage_tests)
+
+    add_executable(v0_async_lifetime_tests tests/runtime/v0/AsyncLifetimeTests.cpp)
+    target_link_libraries(v0_async_lifetime_tests PRIVATE thiran_v0_storage)
+    add_test(NAME V0AsyncLifetimeTests COMMAND v0_async_lifetime_tests)
 
     add_executable(v0_native_cpu_tests tests/backend/v0/NativeCpuTests.cpp)
     target_link_libraries(v0_native_cpu_tests PRIVATE thiran_v0_native_cpu)

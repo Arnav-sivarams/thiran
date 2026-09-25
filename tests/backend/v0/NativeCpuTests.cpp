@@ -39,7 +39,8 @@ static Run compileRun(const std::string& cpp,const fs::path& dir,const std::stri
     fs::path src=dir/(stem+".cpp"),exe=dir/stem,build=TH008_BUILD;
     { std::ofstream f(src); f<<cpp; }
     std::string command=std::string(TH008_CXX)+" -std=c++20 "+TH008_CXX_FLAGS+" -I"+TH008_INCLUDE+" "+src.string()+
-        " "+(build/"libthiran_v0_storage.a").string()+" "+(build/"libthiran_v0_analysis.a").string()+
+        " "+(build/"libthiran_v0_storage.a").string()+" "+(build/"libthiran_v0_async.a").string()+
+        " "+(build/"libthiran_v0_analysis.a").string()+
         " "+(build/"libthiran_v0_semantic.a").string()+" "+(build/"libthiran_v0_frontend.a").string()+
         " -o "+exe.string()+" 2>"+(dir/(stem+".compile.err")).string();
     int status=std::system(command.c_str());

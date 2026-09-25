@@ -121,6 +121,11 @@ int main() {
 
         const auto probe = backend::probeNativeGpu();
         require(probe.backendBuilt == backend::nativeGpuBackendBuilt(), "GPU build discovery mismatch");
+        require((backend::nativeGpuAsyncEffects() &
+                 static_cast<analysis::EffectSet>(analysis::EffectKind::Async)) != 0 &&
+                (backend::nativeGpuAsyncEffects() &
+                 static_cast<analysis::EffectSet>(analysis::EffectKind::Transfer)) != 0,
+                "native async API is disconnected from Async/Transfer effects");
         if (backend::nativeGpuBackendBuilt()) {
             const auto ptx = backend::emitNativeGpuPtx();
             require(ptx == backend::emitNativeGpuPtx() &&
@@ -149,6 +154,11 @@ int main() {
                     invalidRegion.error->code == "GPU-INVALID-REGION" &&
                     invalidRegion.evidence.kernelLaunches == 0,
                     "malformed GPU region reached device execution");
+            const auto invalidAsync = backend::submitNativeGpuAsync(malformed);
+            require(!invalidAsync.ok() && invalidAsync.error &&
+                    invalidAsync.error->code == "GPU-INVALID-REGION" &&
+                    invalidAsync.evidence.submittedOperations == 0,
+                    "malformed async GPU region acquired lifetime obligations");
         }
         if (!backend::nativeGpuBackendBuilt()) {
             require(backend::emitNativeGpuPtx().empty(), "disabled GPU build emitted a device module");
@@ -158,6 +168,11 @@ int main() {
             require(!execution.ok() && execution.error && execution.error->code == "GPU-BACKEND-NOT-BUILT" &&
                     execution.evidence.kernelLaunches == 0,
                     "disabled GPU request did not fail without fallback");
+            const auto asyncExecution = backend::submitNativeGpuAsync(*integerRegion.region);
+            require(!asyncExecution.ok() && asyncExecution.error &&
+                    asyncExecution.error->code == "GPU-BACKEND-NOT-BUILT" &&
+                    asyncExecution.evidence.submittedOperations == 0,
+                    "disabled async GPU request did not fail without reservations/fallback");
         } else if (!probe.deviceAvailable) {
             const auto execution = backend::executeNativeGpu(*integerRegion.region);
             require(!execution.ok() && execution.error &&

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/v0/Ownership.hpp"
+#include "runtime/v0/Async.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -25,6 +26,7 @@ public:
     bool valid() const;
     StorageObjectId id() const;
     std::size_t byteLength() const;
+    runtime::AsyncResource asyncResource() const;
 private:
     explicit StorageHandle(std::shared_ptr<StorageObject> object);
     std::shared_ptr<StorageObject> object_;
@@ -63,11 +65,16 @@ using Selector = std::variant<std::uint64_t, Slice>;
 class Tensor {
 public:
     explicit Tensor(TensorDescriptor descriptor);
+    Tensor(const Tensor&) = default;
+    Tensor& operator=(const Tensor&);
+    Tensor(Tensor&&);
+    Tensor& operator=(Tensor&&);
     static Tensor materializeI64(std::vector<std::uint64_t> shape, const std::vector<std::int64_t>& values);
     static Tensor materializeF32(std::vector<std::uint64_t> shape, const std::vector<float>& values);
     static Tensor empty(DType dtype, std::vector<std::uint64_t> shape);
     const TensorDescriptor& descriptor() const { return descriptor_; }
     StorageObjectId storageId() const { return descriptor_.storage.id(); }
+    runtime::AsyncResource asyncResource() const { return descriptor_.storage.asyncResource(); }
     bool isView() const { return descriptor_.view; }
     bool isContiguousRowMajor() const { return storage::isContiguousRowMajor(descriptor_); }
     std::int64_t loadI64(const std::vector<std::uint64_t>& indices) const;
@@ -91,7 +98,7 @@ private:
 // It is intentionally move-only; handle counts do not grant mutation permission.
 class MutableTensorRef {
 public:
-    explicit MutableTensorRef(Tensor& tensor) : tensor_(tensor) {}
+    explicit MutableTensorRef(Tensor& tensor);
     MutableTensorRef(const MutableTensorRef&) = delete;
     MutableTensorRef& operator=(const MutableTensorRef&) = delete;
     MutableTensorRef(MutableTensorRef&&) = default;

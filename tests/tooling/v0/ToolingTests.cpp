@@ -15,7 +15,7 @@ static void write(const fs::path& path,const std::string& bytes) { std::ofstream
 static t::HostToolchainConfig config() {
     fs::path build=TH009_BUILD;
     return {TH009_CXX,t::configuredHostCompilerArguments(), {TH009_INCLUDE},
-            {build/"libthiran_v0_storage.a",build/"libthiran_v0_analysis.a",
+            {build/"libthiran_v0_storage.a",build/"libthiran_v0_async.a",build/"libthiran_v0_analysis.a",
              build/"libthiran_v0_semantic.a",build/"libthiran_v0_frontend.a"}};
 }
 static t::ProcessResult cli(std::vector<std::string> args) { return t::runProcess({TH009_CLI,std::move(args)}); }

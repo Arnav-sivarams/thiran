@@ -35,11 +35,19 @@ void visitIndices(const std::vector<std::uint64_t>& shape,
 }
 }
 
-struct StorageObject { StorageObjectId id; std::vector<std::byte> bytes; };
+struct StorageObject {
+    StorageObjectId id;
+    std::vector<std::byte> bytes;
+    runtime::AsyncResource async = runtime::AsyncResource::create();
+};
 StorageHandle::StorageHandle(std::shared_ptr<StorageObject> object) : object_(std::move(object)) {}
 bool StorageHandle::valid() const { return static_cast<bool>(object_); }
 StorageObjectId StorageHandle::id() const { if (!object_) fail("TH007-DESCRIPTOR"); return object_->id; }
 std::size_t StorageHandle::byteLength() const { if (!object_) fail("TH007-DESCRIPTOR"); return object_->bytes.size(); }
+runtime::AsyncResource StorageHandle::asyncResource() const {
+    if (!object_) fail("TH007-DESCRIPTOR");
+    return runtime::AsyncResource(object_->async.state_, object_);
+}
 StorageHandle allocate(std::size_t bytes) {
     if (nextStorageId == std::numeric_limits<std::uint64_t>::max()) fail("TH007-STORAGE-ID-OVERFLOW");
     auto object = std::make_shared<StorageObject>();
@@ -156,6 +164,23 @@ void verifySemanticShape(const semantic::Type& type, const semantic::ShapeFact& 
     }
 }
 Tensor::Tensor(TensorDescriptor descriptor) : descriptor_(std::move(descriptor)) { verifyDescriptor(descriptor_); }
+Tensor& Tensor::operator=(const Tensor& other) {
+    if (this == &other) return *this;
+    descriptor_.storage.asyncResource().requireDestroyable();
+    descriptor_ = other.descriptor_;
+    return *this;
+}
+Tensor::Tensor(Tensor&& other) {
+    other.asyncResource().requireMovable();
+    descriptor_ = std::move(other.descriptor_);
+}
+Tensor& Tensor::operator=(Tensor&& other) {
+    if (this == &other) return *this;
+    descriptor_.storage.asyncResource().requireDestroyable();
+    other.asyncResource().requireMovable();
+    descriptor_ = std::move(other.descriptor_);
+    return *this;
+}
 Tensor Tensor::materializeI64(std::vector<std::uint64_t> shape, const std::vector<std::int64_t>& values) {
     auto count = checkedElementCount(shape);
     if (count != values.size()) fail("TH-SPEC-SHAPE");
@@ -178,6 +203,7 @@ Tensor Tensor::empty(DType dtype, std::vector<std::uint64_t> shape) {
     return Tensor(std::move(d));
 }
 std::uint64_t Tensor::checkedLogicalOffset(const std::vector<std::uint64_t>& indices) const {
+    asyncResource().requireReadable();
     verifyDescriptor(descriptor_);
     if (indices.size() != descriptor_.shape.size()) fail("TH-SPEC-BOUNDS");
     auto offset = descriptor_.elementOffset;
@@ -202,7 +228,11 @@ float Tensor::loadF32(const std::vector<std::uint64_t>& indices) const {
     std::memcpy(&value, descriptor_.storage.object_->bytes.data() + checkedByteCount(offset, DType::F32), sizeof(value));
     return value;
 }
+MutableTensorRef::MutableTensorRef(Tensor& tensor) : tensor_(tensor) {
+    tensor_.asyncResource().requireMutable();
+}
 void MutableTensorRef::storeI64(const std::vector<std::uint64_t>& indices, std::int64_t value) {
+    tensor_.asyncResource().requireMutable();
     if (tensor_.descriptor_.dtype != DType::I64) fail("TH007-DTYPE-EXECUTION-DEFERRED");
     const auto offset = tensor_.checkedLogicalOffset(indices);
     std::memcpy(tensor_.descriptor_.storage.object_->bytes.data() + checkedByteCount(offset, DType::I64),
@@ -273,6 +303,7 @@ std::string HostBuffer::debug() const {
     return out.str();
 }
 Tensor Tensor::select(const std::vector<Selector>& selectors) const {
+    asyncResource().requireReadable();
     verifyDescriptor(descriptor_);
     if (selectors.size() > descriptor_.shape.size()) fail("TH-SPEC-BOUNDS");
     auto d = descriptor_;
@@ -305,6 +336,7 @@ Tensor Tensor::select(const std::vector<Selector>& selectors) const {
     return Tensor(std::move(d));
 }
 Tensor Tensor::transpose() const {
+    asyncResource().requireReadable();
     if (descriptor_.shape.size() != 2) fail("TH-SPEC-SHAPE");
     auto d = descriptor_;
     std::swap(d.shape[0], d.shape[1]);
@@ -313,6 +345,7 @@ Tensor Tensor::transpose() const {
     return Tensor(std::move(d));
 }
 Tensor Tensor::reshapeView(const std::vector<std::uint64_t>& shape) const {
+    asyncResource().requireReadable();
     if (checkedElementCount(shape) != checkedElementCount(descriptor_.shape)) fail("TH-SPEC-SHAPE");
     if (!isContiguousRowMajor()) fail("TH-SPEC-SHAPE");
     auto d = descriptor_;
@@ -327,6 +360,7 @@ Tensor Tensor::reshapeCopy(const std::vector<std::uint64_t>& shape) const {
     fail("TH007-DTYPE-EXECUTION-DEFERRED");
 }
 std::vector<std::int64_t> Tensor::logicalI64Values() const {
+    asyncResource().requireReadable();
     if (descriptor_.dtype != DType::I64) fail("TH007-DTYPE-EXECUTION-DEFERRED");
     std::vector<std::int64_t> values;
     values.reserve(static_cast<std::size_t>(checkedElementCount(descriptor_.shape)));
@@ -334,6 +368,7 @@ std::vector<std::int64_t> Tensor::logicalI64Values() const {
     return values;
 }
 std::vector<float> Tensor::logicalF32Values() const {
+    asyncResource().requireReadable();
     if (descriptor_.dtype != DType::F32) fail("TH007-DTYPE-EXECUTION-DEFERRED");
     std::vector<float> values;
     values.reserve(static_cast<std::size_t>(checkedElementCount(descriptor_.shape)));

@@ -48,7 +48,8 @@ int fail(const DriverResult& result) {
 HostToolchainConfig config() {
     const std::filesystem::path build = TH009_BUILD;
     return {TH009_CXX, configuredHostCompilerArguments(), {TH009_INCLUDE},
-            {build / "libthiran_v0_storage.a", build / "libthiran_v0_analysis.a",
+            {build / "libthiran_v0_storage.a", build / "libthiran_v0_async.a",
+             build / "libthiran_v0_analysis.a",
              build / "libthiran_v0_semantic.a", build / "libthiran_v0_frontend.a"}};
 }
 }

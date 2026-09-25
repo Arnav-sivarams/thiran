@@ -8,6 +8,8 @@ TH-007 adds `thiran_v0_storage` after TH-006 abstract ownership analysis. It doe
 
 `StorageHandle` is a narrow retention abstraction currently implemented with a standard-library shared lifetime handle. It retains owned host bytes while a tensor or view needs them. Element access does not alter its count. Shared handle count is not mutation permission, and reference counting is not borrow checking. A view may keep bytes physically alive after a C++ root object disappears, but a source view whose root moved, escaped, or conflicts with mutation remains illegal under TH-006. Storage lifetime prevents use-after-free in accepted lowered programs; it cannot legalize rejected source. StorageObjectId equality proves concrete sharing, not source exclusivity.
 
+TH-014 associates each storage object with one device-neutral `AsyncResource` root. Handle aliases and views expose that same root; deep copies allocate a new root. A reservation holds opaque storage retention through observation or safe drop-drain. Tensor reads reject an active async writer, and mutable access/move/replacement reject any active reservation. Physical wrapper destruction is safe because the reservation retains the object; explicit free lowering must call the destroyability guard. AsyncResourceId remains distinct from ResourceId and StorageObjectId.
+
 The conservative resource bridge snapshots the created-resource facts it needs, rather than retaining a potentially dangling reference to an analysis result.
 
 ## Storage and descriptor

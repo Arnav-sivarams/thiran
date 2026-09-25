@@ -1,6 +1,6 @@
 # TH-006 V0 effect analysis
 
-The isolated V0 analysis stores an ordered instruction-level effect class in semantic IR and a deterministic per-function summary in OwnershipAnalysisResult. A zero effect set is Pure; the represented kinds are MayTrap, Mutates, RNG, IO, Transfer, and Async. RNG, IO, Transfer, and Async are representable future kinds, not implemented source operations.
+The isolated V0 analysis stores an ordered instruction-level effect class in semantic IR and a deterministic per-function summary in OwnershipAnalysisResult. A zero effect set is Pure; the represented kinds are MayTrap, Mutates, RNG, IO, Transfer, and Async. RNG and IO remain representable future kinds. TH-014's internal native submission API is the first runtime consumer of the existing Transfer and Async kinds; `nativeGpuAsyncEffects` publishes that mapping. There is still no public source async operation, so no source function acquires these effects yet.
 
 An ordered runtime Check has MayTrap. Checked i64 operations and indexing/reductions that can fail retain MayTrap; a statically proven constant scalar arithmetic expression can be Pure. copy is logically independent ownership production but Pure for side-effect ordering; move changes binding availability but is not IO or RNG. A borrow mut call and a mutable-borrow parameter signature carry Mutates, identifying the parameter or call resource in ownership facts. The reference evaluator's lack of physical mutation cannot erase this effect.
 
