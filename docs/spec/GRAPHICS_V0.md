@@ -1,4 +1,4 @@
-# CPU numerical graphics V0
+# Numerical graphics V0
 
 TH-019 adds a bounded, headless native CPU graphics runtime. It is a typed
 library beside the structured semantic/runtime pipeline, not a second source
@@ -142,3 +142,13 @@ required structured mutation. Rasterization is not differentiable and has no
 AD rule. There is no Python, NumPy, PyTorch, OpenCV, SDL, GLFW, Qt, OpenGL,
 Vulkan, DirectX, CUDA, texture, material, lighting, or external-rasterizer
 dependency. GPU graphics remains outside TH-019.
+
+## Native GPU implementation
+
+TH-020 implements these same semantics through a native CUDA compute backend.
+Validation, transform, homogeneous clipping, stable triangulation, viewport
+setup, and orientation are shared with this CPU authority. Coverage, depth,
+and perspective-correct interpolation execute in a one-work-item-per-pixel PTX
+kernel. The observed result uses the same `Framebuffer` Tensor representation
+and PPM writer. Transfer, async, fallback, and interoperability details are
+specified in `NATIVE_GPU_GRAPHICS_V0.md`.

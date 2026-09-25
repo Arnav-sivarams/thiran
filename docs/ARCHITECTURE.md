@@ -63,6 +63,16 @@ framebuffer mutation remain structured loops. The renderer is not a scene
 graph, does not use the historical Graph/Region path, and is not forced into a
 whole-renderer dataflow DAG or TH-016 artifact ABI.
 
+TH-020 adds a second implementation of that same graphics contract through the
+TH-013 CUDA Driver/PTX substrate. Shared CPU preparation validates, transforms,
+clips, and creates a deterministic screen-triangle packet. A backend-owned
+one-work-item-per-pixel kernel performs coverage, depth, and perspective color
+on the physical GPU. TH-014 reservations retain Tensor inputs and execution
+resources until observation. Observation crosses an explicit D2H boundary and
+publishes ordinary Tensor storage; later native GPU TensorRegion work may H2D
+that storage again. There is no zero-copy claim and rasterization is not forced
+into TensorRegion or the TH-016 artifact ABI.
+
 ## Region formation
 
 `TopologicalRegionFormer` computes a deterministic Kahn ordering using Graph storage index as the ready-node tie-break. It forms contiguous, strategy-homogeneous Regions. A Node joins the current Region only when a direct producer is already inside it, which guarantees weak connectedness of each induced Region subgraph.
@@ -104,8 +114,9 @@ Normal `Thiran <source-file>` continues through analyses, scheduler structures, 
 - PyTorch emission remains the legacy Graph/Region execution path. The bounded
   V0 TensorRegion path also has native CPU/GPU artifacts and TH-017 model-bundle
   execution; neither path silently falls back to the other.
-- The TH-019 headless renderer is native CPU library execution over V0 storage.
-  It has no Python/framework renderer and no GPU graphics path.
+- The graphics runtime has independent native CPU reference and native CUDA
+  compute implementations over V0 storage. It has no Python/framework or
+  external graphics renderer, and GPU selection never falls back to CPU.
 
 ## Ownership and lifetime
 

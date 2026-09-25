@@ -1101,6 +1101,99 @@ struct NativeGpuPendingState {
 #endif
 };
 
+struct NativeGpuKernelPendingState {
+    NativeGpuKernelRequest request;
+    runtime::AsyncResource output = runtime::AsyncResource::create();
+    GpuExecutionEvidence evidence;
+    std::optional<std::vector<std::vector<std::byte>>> completedOutputs;
+    std::optional<GpuError> failure;
+#if THIRAN_ENABLE_NATIVE_GPU
+    Driver driver;
+    GpuDeviceInfo initializedDevice;
+    Context context;
+    Stream stream;
+    Module module;
+    Event completion;
+    std::vector<DeviceAllocationPtr> inputAllocations;
+    std::vector<DeviceAllocationPtr> outputAllocations;
+    std::vector<std::vector<std::byte>> hostOutputs;
+    bool eventRecorded = false;
+    bool finalized = false;
+
+    NativeGpuKernelPendingState(NativeGpuKernelRequest selectedRequest, int ordinal)
+        : request(std::move(selectedRequest)), driver(),
+          initializedDevice(initialize(driver, ordinal)), context(driver, ordinal),
+          stream(driver, context), module(driver, context, request.ptx),
+          completion(driver, context) {
+        evidence.device = initializedDevice;
+    }
+
+    void submitWork() {
+        inputAllocations.reserve(request.inputBuffers.size());
+        for (const auto& input : request.inputBuffers) {
+            auto allocation = allocate(driver, context, input.size(), evidence);
+            copyToDevice(driver, context, stream, allocation, input.data(), input.size(), evidence);
+            if (!input.empty()) ++evidence.inputStorageUploads;
+            inputAllocations.push_back(std::move(allocation));
+        }
+        outputAllocations.reserve(request.outputByteCounts.size());
+        hostOutputs.reserve(request.outputByteCounts.size());
+        for (const auto byteCount : request.outputByteCounts) {
+            outputAllocations.push_back(allocate(driver, context, byteCount, evidence));
+            hostOutputs.emplace_back(byteCount);
+        }
+
+        if (request.workItems != 0) {
+            constexpr std::uint64_t block = 256;
+            const auto grid = request.workItems / block +
+                              static_cast<std::uint64_t>(request.workItems % block != 0);
+            if (grid > std::numeric_limits<unsigned int>::max())
+                fail(GpuErrorCategory::BackendUnsupported, "GPU-LAUNCH-OVERFLOW",
+                     "GPU work-item count exceeds the launch grid");
+            std::vector<CUdeviceptr> pointers;
+            pointers.reserve(inputAllocations.size() + outputAllocations.size());
+            for (const auto& allocation : inputAllocations) pointers.push_back(allocation->pointer);
+            for (const auto& allocation : outputAllocations) pointers.push_back(allocation->pointer);
+            std::vector<void*> arguments;
+            arguments.reserve(pointers.size());
+            for (auto& pointer : pointers) arguments.push_back(&pointer);
+            context.activate();
+            driver.check(driver.cuLaunchKernel(module.function(request.entry),
+                                               static_cast<unsigned int>(grid), 1, 1,
+                                               static_cast<unsigned int>(block), 1, 1,
+                                               0, stream.get(), arguments.data(), nullptr),
+                         "cuLaunchKernel(native-kernel)");
+            ++evidence.kernelLaunches;
+            ++evidence.streamSubmissions;
+        }
+        for (std::size_t index = 0; index < outputAllocations.size(); ++index) {
+            copyFromDevice(driver, context, stream, hostOutputs[index].data(),
+                           outputAllocations[index], hostOutputs[index].size(), evidence);
+            if (!hostOutputs[index].empty()) ++evidence.resultDownloads;
+        }
+        context.activate();
+        driver.check(driver.cuEventRecord(completion.get(), stream.get()), "cuEventRecord");
+        eventRecorded = true;
+        ++evidence.eventRecords;
+        ++evidence.streamSubmissions;
+    }
+
+    void finalize() {
+        if (finalized) return;
+        completedOutputs = hostOutputs;
+        finalized = true;
+    }
+
+    void releaseDeviceStorage() noexcept {
+        inputAllocations.clear();
+        outputAllocations.clear();
+    }
+#else
+    NativeGpuKernelPendingState(NativeGpuKernelRequest selectedRequest, int)
+        : request(std::move(selectedRequest)) {}
+#endif
+};
+
 namespace {
 
 #if THIRAN_ENABLE_NATIVE_GPU
@@ -1412,6 +1505,171 @@ GpuAsyncSubmission submitNativeGpuPayloadAsync(const TensorRegion& region,
     (void)plan;
     (void)ptxSource;
     (void)inputs;
+    (void)device;
+    result.error = GpuError{GpuErrorCategory::BackendUnavailable, "GPU-BACKEND-NOT-BUILT",
+                            "native GPU backend was disabled at build time"};
+#endif
+    return result;
+}
+
+PendingNativeGpuKernel::PendingNativeGpuKernel(
+    std::shared_ptr<NativeGpuKernelPendingState> state, runtime::AsyncOperation operation)
+    : state_(std::move(state)), operation_(std::move(operation)) {}
+
+bool PendingNativeGpuKernel::valid() const noexcept { return state_ && operation_.valid(); }
+runtime::AsyncOperationState PendingNativeGpuKernel::state() const noexcept {
+    return operation_.state();
+}
+bool PendingNativeGpuKernel::observed() const noexcept { return operation_.observed(); }
+runtime::AsyncResource PendingNativeGpuKernel::outputResource() const {
+    return state_ ? state_->output : runtime::AsyncResource{};
+}
+GpuExecutionEvidence PendingNativeGpuKernel::evidence() const noexcept {
+    if (!state_) return {};
+    auto result = state_->evidence;
+    mergeEvidence(result, operation_.evidence());
+    return result;
+}
+NativeGpuKernelResult PendingNativeGpuKernel::observe() noexcept {
+    NativeGpuKernelResult result;
+    if (!valid()) {
+        result.error = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INVALID-ASYNC-HANDLE",
+                                "native GPU kernel async handle is invalid"};
+        return result;
+    }
+    const auto observed = operation_.observe();
+    if (!observed.success) {
+        if (state_->failure) result.error = state_->failure;
+        else if (observed.error)
+            result.error = GpuError{GpuErrorCategory::RuntimeFailure, observed.error->code,
+                                    observed.error->message};
+        else
+            result.error = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-ASYNC-OBSERVE",
+                                    "native GPU kernel observation failed"};
+    } else if (!state_->completedOutputs) {
+        result.error = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-OUTPUT-MISSING",
+                                "native GPU kernel produced no output buffers"};
+    } else {
+        result.outputs = state_->completedOutputs;
+    }
+    result.evidence = evidence();
+    return result;
+}
+
+NativeGpuKernelSubmission submitNativeGpuKernelAsync(NativeGpuKernelRequest request,
+                                                      int device) noexcept {
+    NativeGpuKernelSubmission result;
+    result.evidence.device.backendBuilt = nativeGpuBackendBuilt();
+#if THIRAN_ENABLE_NATIVE_GPU
+    try {
+        if (request.ptx.empty())
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-MISSING-PTX",
+                 "native GPU kernel PTX is empty");
+        if (request.entry.empty())
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-MISSING-ENTRY",
+                 "native GPU kernel entry name is empty");
+        auto state = std::make_shared<NativeGpuKernelPendingState>(std::move(request), device);
+        std::vector<runtime::AsyncResourceAccess> accesses;
+        accesses.reserve(state->request.retainedReadResources.size() + 1);
+        for (const auto& resource : state->request.retainedReadResources)
+            accesses.push_back({resource, runtime::AsyncReservationKind::Read});
+        accesses.push_back({state->output, runtime::AsyncReservationKind::Write});
+
+        runtime::AsyncBackendCallbacks callbacks;
+        callbacks.submit = [state]() -> std::optional<runtime::AsyncError> {
+            try { state->submitWork(); return {}; }
+            catch (const Failure& failure) { state->failure = failure.error(); }
+            catch (const std::exception& error) { state->failure = gpuInternal(error); }
+            catch (...) {
+                state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                          "unknown native GPU kernel submission failure"};
+            }
+            return asyncError(*state->failure);
+        };
+        callbacks.poll = [state] {
+            try {
+                if (!state->eventRecorded) return runtime::AsyncPollResult{};
+                state->context.activate();
+                const auto status = state->driver.cuEventQuery(state->completion.get());
+                if (status == cudaErrorNotReady) return runtime::AsyncPollResult{};
+                state->driver.check(status, "cuEventQuery(native-kernel)");
+                return runtime::AsyncPollResult{runtime::AsyncPollState::Completed, {}};
+            } catch (const Failure& failure) { state->failure = failure.error(); }
+            catch (const std::exception& error) { state->failure = gpuInternal(error); }
+            return runtime::AsyncPollResult{runtime::AsyncPollState::Failed,
+                                            asyncError(*state->failure)};
+        };
+        callbacks.wait = [state]() -> std::optional<runtime::AsyncError> {
+            try {
+                state->context.activate();
+                if (state->eventRecorded) {
+                    state->driver.check(state->driver.cuEventSynchronize(state->completion.get()),
+                                        "cuEventSynchronize(native-kernel)");
+                    ++state->evidence.synchronizations;
+                }
+                if (state->failure) {
+                    auto error = asyncError(*state->failure);
+                    state->releaseDeviceStorage();
+                    return error;
+                }
+                state->finalize();
+                state->releaseDeviceStorage();
+                return {};
+            } catch (const Failure& failure) { state->failure = failure.error(); }
+            catch (const std::exception& error) { state->failure = gpuInternal(error); }
+            catch (...) {
+                state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                          "unknown native GPU kernel observation failure"};
+            }
+            state->releaseDeviceStorage();
+            return asyncError(*state->failure);
+        };
+        callbacks.abort = [state]() -> std::optional<runtime::AsyncError> {
+            try {
+                state->context.activate();
+                if (state->evidence.streamSubmissions != 0) {
+                    state->driver.check(state->driver.cuStreamSynchronize(state->stream.get()),
+                                        "cuStreamSynchronize(native-kernel-abort)");
+                    ++state->evidence.synchronizations;
+                }
+                state->releaseDeviceStorage();
+                return {};
+            } catch (const Failure& failure) {
+                state->releaseDeviceStorage();
+                return asyncError(failure.error());
+            } catch (const std::exception& error) {
+                state->releaseDeviceStorage();
+                return asyncError(gpuInternal(error));
+            } catch (...) {
+                state->releaseDeviceStorage();
+                return runtime::AsyncError{"GPU-INTERNAL",
+                                           "unknown native GPU kernel abort failure"};
+            }
+        };
+        auto submitted = runtime::submitAsyncOperation(std::move(accesses), {},
+                                                       std::move(callbacks));
+        if (!submitted.ok()) {
+            result.error = state->failure.value_or(GpuError{
+                GpuErrorCategory::RuntimeFailure,
+                submitted.error ? submitted.error->code : "GPU-ASYNC-SUBMIT",
+                submitted.error ? submitted.error->message :
+                                  "native GPU kernel async submission failed"});
+            result.evidence = state->evidence;
+            return result;
+        }
+        result.pending = PendingNativeGpuKernel(state, std::move(*submitted.operation));
+        result.evidence = result.pending->evidence();
+        return result;
+    } catch (const Failure& failure) {
+        result.error = failure.error();
+    } catch (const std::exception& error) {
+        result.error = gpuInternal(error);
+    } catch (...) {
+        result.error = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                "unknown native GPU kernel setup failure"};
+    }
+#else
+    (void)request;
     (void)device;
     result.error = GpuError{GpuErrorCategory::BackendUnavailable, "GPU-BACKEND-NOT-BUILT",
                             "native GPU backend was disabled at build time"};

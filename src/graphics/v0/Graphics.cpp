@@ -1,4 +1,5 @@
 #include "graphics/v0/Graphics.hpp"
+#include "graphics/v0/GraphicsShared.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -90,10 +91,11 @@ std::array<float, 3> normalize(const std::array<float, 3>& value, const char* id
     return result;
 }
 
-struct ClipVertex {
-    std::array<float, 4> position{};
-    std::array<float, 4> color{};
-};
+using detail::ClipTriangle;
+using detail::ClipVertex;
+using detail::PreparedRender;
+using detail::ScreenTriangle;
+using detail::ScreenVertex;
 
 enum class ClipPlane { Left, Right, Bottom, Top, Near, Far };
 
@@ -155,14 +157,6 @@ std::vector<ClipVertex> clipTriangle(std::vector<ClipVertex> polygon) {
     return polygon;
 }
 
-struct ScreenVertex {
-    double x = 0.0;
-    double y = 0.0;
-    double depth = 0.0;
-    double reciprocalW = 0.0;
-    std::array<float, 4> color{};
-};
-
 double edge(const ScreenVertex& first, const ScreenVertex& second, double x, double y) {
     return subtractProducts(second.x - first.x, y - first.y,
                             second.y - first.y, x - first.x);
@@ -213,24 +207,32 @@ struct FrameBuilder {
     std::vector<float> depth;
 };
 
-FrameBuilder makeFrame(std::uint64_t width, std::uint64_t height,
-                       const std::array<float, 4>& clearColor) {
+std::uint64_t validateFramebuffer(std::uint64_t width, std::uint64_t height,
+                                  const std::array<float, 4>& clearColor) {
     for (float component : clearColor)
         if (!finite(component) || component < 0.0f || component > 1.0f)
             fail("TH019-CLEAR-COLOR");
     if (width > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()) ||
         height > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
         fail("TH019-FRAMEBUFFER-DIMENSION");
+    const auto pixelCount = storage::checkedMultiply(width, height);
+    const auto colorCount = storage::checkedMultiply(pixelCount, 4);
+    (void)storage::checkedByteCount(colorCount, storage::DType::F32);
+    (void)storage::checkedByteCount(pixelCount, storage::DType::F32);
+    const std::vector<float> limits;
+    if (colorCount > limits.max_size() || pixelCount > limits.max_size())
+        fail("TH019-FRAMEBUFFER-SIZE");
+    return pixelCount;
+}
+
+FrameBuilder makeFrame(std::uint64_t width, std::uint64_t height,
+                       const std::array<float, 4>& clearColor) {
     FrameBuilder result;
     result.width = width;
     result.height = height;
     try {
-        result.pixelCount = storage::checkedMultiply(width, height);
+        result.pixelCount = validateFramebuffer(width, height, clearColor);
         const auto colorCount = storage::checkedMultiply(result.pixelCount, 4);
-        (void)storage::checkedByteCount(colorCount, storage::DType::F32);
-        (void)storage::checkedByteCount(result.pixelCount, storage::DType::F32);
-        if (colorCount > result.color.max_size() || result.pixelCount > result.depth.max_size())
-            fail("TH019-FRAMEBUFFER-SIZE");
         result.color.resize(checkedHostIndex(colorCount));
         result.depth.assign(checkedHostIndex(result.pixelCount),
                             std::numeric_limits<float>::infinity());
@@ -246,33 +248,11 @@ FrameBuilder makeFrame(std::uint64_t width, std::uint64_t height,
     return result;
 }
 
-void rasterize(std::array<ClipVertex, 3> triangle, FrameBuilder& frame,
+void rasterize(const ScreenTriangle& screenTriangle, FrameBuilder& frame,
                RenderStatistics& statistics) {
     if (frame.width == 0 || frame.height == 0) return;
-    std::array<ScreenVertex, 3> vertices;
-    constexpr float minimumW = 1.0e-7f;
-    for (std::size_t index = 0; index < 3; ++index) {
-        const float w = triangle[index].position[3];
-        if (!finite(w) || w <= minimumW) return;
-        const float x = triangle[index].position[0] / w;
-        const float y = triangle[index].position[1] / w;
-        const float z = triangle[index].position[2] / w;
-        if (!finite(x) || !finite(y) || !finite(z)) return;
-        vertices[index].x = (static_cast<double>(x) * 0.5 + 0.5) *
-                            static_cast<double>(frame.width);
-        vertices[index].y = (0.5 - static_cast<double>(y) * 0.5) *
-                            static_cast<double>(frame.height);
-        vertices[index].depth = z;
-        vertices[index].reciprocalW = 1.0 / static_cast<double>(w);
-        vertices[index].color = triangle[index].color;
-    }
-
-    double area = edge(vertices[0], vertices[1], vertices[2].x, vertices[2].y);
-    if (!std::isfinite(area) || std::fabs(area) <= 1.0e-12) return;
-    if (area < 0.0) {
-        std::swap(vertices[1], vertices[2]);
-        area = -area;
-    }
+    const auto& vertices = screenTriangle;
+    const double area = edge(vertices[0], vertices[1], vertices[2].x, vertices[2].y);
 
     const double minimumX = std::min({vertices[0].x, vertices[1].x, vertices[2].x});
     const double maximumX = std::max({vertices[0].x, vertices[1].x, vertices[2].x});
@@ -362,6 +342,85 @@ void validateGeometry(const storage::Tensor& positions,
 }
 
 } // namespace
+
+namespace detail {
+
+bool prepareScreenTriangle(const ClipTriangle& triangle,
+                           std::uint64_t width,
+                           std::uint64_t height,
+                           ScreenTriangle& output) {
+    constexpr float minimumW = 1.0e-7f;
+    for (std::size_t index = 0; index < 3; ++index) {
+        const float w = triangle[index].position[3];
+        if (!finite(w) || w <= minimumW) return false;
+        const float x = triangle[index].position[0] / w;
+        const float y = triangle[index].position[1] / w;
+        const float z = triangle[index].position[2] / w;
+        if (!finite(x) || !finite(y) || !finite(z)) return false;
+        output[index].x = (static_cast<double>(x) * 0.5 + 0.5) *
+                          static_cast<double>(width);
+        output[index].y = (0.5 - static_cast<double>(y) * 0.5) *
+                          static_cast<double>(height);
+        output[index].depth = z;
+        output[index].reciprocalW = 1.0 / static_cast<double>(w);
+        output[index].color = triangle[index].color;
+    }
+    double area = edge(output[0], output[1], output[2].x, output[2].y);
+    if (!std::isfinite(area) || std::fabs(area) <= 1.0e-12) return false;
+    if (area < 0.0) std::swap(output[1], output[2]);
+    return true;
+}
+
+PreparedRender prepareRender(const storage::Tensor& positions,
+                             const storage::Tensor& indices,
+                             const storage::Tensor& colors,
+                             const storage::Tensor& model,
+                             const storage::Tensor& view,
+                             const storage::Tensor& projection,
+                             std::uint64_t width,
+                             std::uint64_t height,
+                             std::array<float, 4> clearColor) {
+    validateGeometry(positions, indices, colors);
+    PreparedRender prepared;
+    prepared.width = width;
+    prepared.height = height;
+    prepared.pixelCount = validateFramebuffer(width, height, clearColor);
+    prepared.clearColor = clearColor;
+    const auto modelView = multiply(view, model);
+    const auto modelViewProjection = multiply(projection, modelView);
+    const auto vertexCount = positions.descriptor().shape[0];
+    std::vector<ClipVertex> vertices;
+    vertices.reserve(checkedHostIndex(vertexCount));
+    for (std::uint64_t vertex = 0; vertex < vertexCount; ++vertex) {
+        ClipVertex transformed;
+        transformed.position = transform(modelViewProjection,
+            {positions.loadF32({vertex, 0}), positions.loadF32({vertex, 1}),
+             positions.loadF32({vertex, 2}), 1.0f});
+        for (std::uint64_t component = 0; component < 4; ++component)
+            transformed.color[checkedHostIndex(component)] = colors.loadF32({vertex, component});
+        vertices.push_back(transformed);
+    }
+    prepared.statistics.inputTriangleCount = indices.descriptor().shape[0];
+    for (std::uint64_t triangleIndex = 0;
+         triangleIndex < prepared.statistics.inputTriangleCount; ++triangleIndex) {
+        std::vector<ClipVertex> polygon;
+        polygon.reserve(3);
+        for (std::uint64_t corner = 0; corner < 3; ++corner) {
+            const auto index = static_cast<std::uint64_t>(indices.loadI64({triangleIndex, corner}));
+            polygon.push_back(vertices[checkedHostIndex(index)]);
+        }
+        polygon = clipTriangle(std::move(polygon));
+        if (polygon.size() < 3) continue;
+        for (std::size_t corner = 1; corner + 1 < polygon.size(); ++corner) {
+            prepared.statistics.postClipTriangleCount = storage::checkedAdd(
+                prepared.statistics.postClipTriangleCount, 1);
+            prepared.triangles.push_back({polygon[0], polygon[corner], polygon[corner + 1]});
+        }
+    }
+    return prepared;
+}
+
+} // namespace detail
 
 storage::Tensor identity() {
     return matrix({1, 0, 0, 0,
@@ -487,6 +546,18 @@ Framebuffer::Framebuffer(std::uint64_t width, std::uint64_t height,
                          storage::Tensor color, storage::Tensor depth)
     : width_(width), height_(height), color_(std::move(color)), depth_(std::move(depth)) {}
 
+Framebuffer makeFramebuffer(std::uint64_t width, std::uint64_t height,
+                            storage::Tensor color, storage::Tensor depth) {
+    const auto pixels = storage::checkedMultiply(width, height);
+    if (color.descriptor().dtype != storage::DType::F32 ||
+        color.descriptor().shape != std::vector<std::uint64_t>{pixels, 4} ||
+        depth.descriptor().dtype != storage::DType::F32 ||
+        depth.descriptor().shape != std::vector<std::uint64_t>{pixels})
+        fail("TH019-FRAMEBUFFER-TENSOR");
+    if (color.storageId() == depth.storageId()) fail("TH019-FRAMEBUFFER-ALIAS");
+    return Framebuffer(width, height, std::move(color), std::move(depth));
+}
+
 std::array<float, 4> Framebuffer::pixelColor(std::uint64_t x, std::uint64_t y) const {
     const auto count = storage::checkedMultiply(width_, height_);
     const auto pixel = checkedPixel(x, y, width_, height_, count);
@@ -511,43 +582,17 @@ RenderResult render(const storage::Tensor& positions,
                     std::uint64_t width,
                     std::uint64_t height,
                     std::array<float, 4> clearColor) {
-    validateGeometry(positions, indices, colors);
+    auto prepared = detail::prepareRender(positions, indices, colors, model, view, projection,
+                                          width, height, clearColor);
     auto frame = makeFrame(width, height, clearColor);
-    const auto modelView = multiply(view, model);
-    const auto modelViewProjection = multiply(projection, modelView);
-    const auto vertexCount = positions.descriptor().shape[0];
-    std::vector<ClipVertex> vertices;
-    vertices.reserve(checkedHostIndex(vertexCount));
-    for (std::uint64_t vertex = 0; vertex < vertexCount; ++vertex) {
-        ClipVertex transformed;
-        transformed.position = transform(modelViewProjection,
-            {positions.loadF32({vertex, 0}), positions.loadF32({vertex, 1}),
-             positions.loadF32({vertex, 2}), 1.0f});
-        for (std::uint64_t component = 0; component < 4; ++component)
-            transformed.color[checkedHostIndex(component)] = colors.loadF32({vertex, component});
-        vertices.push_back(transformed);
+    auto statistics = prepared.statistics;
+    for (const auto& triangle : prepared.triangles) {
+        ScreenTriangle screen;
+        if (detail::prepareScreenTriangle(triangle, width, height, screen))
+            rasterize(screen, frame, statistics);
     }
 
-    RenderStatistics statistics;
-    statistics.inputTriangleCount = indices.descriptor().shape[0];
-    for (std::uint64_t triangleIndex = 0; triangleIndex < statistics.inputTriangleCount;
-         ++triangleIndex) {
-        std::vector<ClipVertex> polygon;
-        polygon.reserve(3);
-        for (std::uint64_t corner = 0; corner < 3; ++corner) {
-            const auto index = static_cast<std::uint64_t>(indices.loadI64({triangleIndex, corner}));
-            polygon.push_back(vertices[checkedHostIndex(index)]);
-        }
-        polygon = clipTriangle(std::move(polygon));
-        if (polygon.size() < 3) continue;
-        for (std::size_t corner = 1; corner + 1 < polygon.size(); ++corner) {
-            statistics.postClipTriangleCount = storage::checkedAdd(
-                statistics.postClipTriangleCount, 1);
-            rasterize({polygon[0], polygon[corner], polygon[corner + 1]}, frame, statistics);
-        }
-    }
-
-    Framebuffer framebuffer(width, height,
+    auto framebuffer = makeFramebuffer(width, height,
         storage::Tensor::materializeF32({frame.pixelCount, 4}, frame.color),
         storage::Tensor::materializeF32({frame.pixelCount}, frame.depth));
     return {std::move(framebuffer), statistics};

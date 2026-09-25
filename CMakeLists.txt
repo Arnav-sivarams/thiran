@@ -104,8 +104,12 @@ add_library(thiran_v0_async STATIC src/runtime/v0/Async.cpp)
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
 target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis thiran_v0_async)
 
-add_library(thiran_v0_graphics STATIC src/graphics/v0/Graphics.cpp)
+add_library(thiran_v0_graphics STATIC
+    src/graphics/v0/Graphics.cpp
+    src/graphics/v0/GraphicsGpu.cpp)
 target_link_libraries(thiran_v0_graphics PUBLIC thiran_v0_storage)
+target_compile_definitions(thiran_v0_graphics PRIVATE
+    THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
 
 add_library(thiran_v0_persistence STATIC src/persistence/v0/Persistence.cpp)
 target_link_libraries(thiran_v0_persistence PUBLIC thiran_v0_storage)
@@ -126,6 +130,7 @@ add_library(thiran_v0_native_gpu STATIC src/backend/v0/NativeGpu.cpp)
 target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_physical_plan PRIVATE ${CMAKE_DL_LIBS})
 target_compile_definitions(thiran_v0_native_gpu PRIVATE
     THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
+target_link_libraries(thiran_v0_graphics PUBLIC thiran_v0_native_gpu)
 
 add_library(thiran_v0_process STATIC src/tooling/v0/Process.cpp)
 
@@ -221,6 +226,10 @@ if(BUILD_TESTING)
     target_link_libraries(v0_graphics_tests PRIVATE thiran_v0_graphics)
     add_test(NAME V0GraphicsTests COMMAND v0_graphics_tests)
 
+    add_executable(v0_graphics_gpu_tests tests/graphics/v0/GraphicsGpuTests.cpp)
+    target_link_libraries(v0_graphics_gpu_tests PRIVATE thiran_v0_graphics)
+    add_test(NAME V0GraphicsGpuTests COMMAND v0_graphics_gpu_tests)
+
     add_executable(v0_async_lifetime_tests tests/runtime/v0/AsyncLifetimeTests.cpp)
     target_link_libraries(v0_async_lifetime_tests PRIVATE thiran_v0_storage)
     add_test(NAME V0AsyncLifetimeTests COMMAND v0_async_lifetime_tests)
@@ -265,6 +274,12 @@ if(BUILD_TESTING)
     add_test(NAME V0ModelDeploymentTests COMMAND v0_model_deployment_tests)
 
     if(THIRAN_ENABLE_NATIVE_GPU)
+        add_executable(v0_graphics_gpu_integration_tests
+            tests/graphics/v0/GraphicsGpuIntegrationTests.cpp)
+        target_link_libraries(v0_graphics_gpu_integration_tests PRIVATE thiran_v0_graphics)
+        add_test(NAME V0GraphicsGpuIntegrationTests COMMAND v0_graphics_gpu_integration_tests)
+        set_tests_properties(V0GraphicsGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
+
         add_executable(v0_native_gpu_integration_tests tests/backend/v0/NativeGpuIntegrationTests.cpp)
         target_link_libraries(v0_native_gpu_integration_tests PRIVATE thiran_v0_native_gpu)
         add_test(NAME V0NativeGpuIntegrationTests COMMAND v0_native_gpu_integration_tests)

@@ -66,12 +66,19 @@ private:
                                const storage::Tensor&, const storage::Tensor&,
                                std::uint64_t, std::uint64_t,
                                std::array<float, 4>);
+    friend Framebuffer makeFramebuffer(std::uint64_t, std::uint64_t,
+                                       storage::Tensor, storage::Tensor);
 };
 
 struct RenderResult {
     Framebuffer framebuffer;
     RenderStatistics statistics;
 };
+
+// Backend publication hook. Callers must provide fresh, completed tensors with
+// color [H*W,4] and depth [H*W]. It is primarily used after GPU observation.
+Framebuffer makeFramebuffer(std::uint64_t width, std::uint64_t height,
+                            storage::Tensor color, storage::Tensor depth);
 
 // positions: [N,3] f32; indices: [T,3] i64; colors: [N,4] f32.
 // Geometry and transforms are read-only aliases for the duration of the call.

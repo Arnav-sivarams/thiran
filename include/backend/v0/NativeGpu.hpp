@@ -5,6 +5,7 @@
 #include "storage/v0/Storage.hpp"
 
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,7 @@ NativeResult extractStrictGpu(const semantic::Module&,
                               bool standalone);
 
 enum class GpuErrorCategory {
+    ValidationFailure,
     BackendUnavailable,
     InvalidDevice,
     BackendUnsupported,
@@ -134,6 +136,60 @@ struct GpuAsyncSubmission {
     GpuExecutionEvidence evidence;
     bool ok() const noexcept { return pending.has_value() && !error.has_value(); }
 };
+
+// Backend-internal untyped PTX execution substrate for structured native
+// runtimes (such as graphics) that are not TensorRegion DAGs. CUDA launch
+// geometry and device pointers remain private to the backend.
+struct NativeGpuKernelRequest {
+    std::string ptx;
+    std::string entry;
+    std::uint64_t workItems = 0;
+    std::vector<std::vector<std::byte>> inputBuffers;
+    std::vector<std::size_t> outputByteCounts;
+    std::vector<runtime::AsyncResource> retainedReadResources;
+};
+
+struct NativeGpuKernelPendingState;
+struct NativeGpuKernelSubmission;
+
+struct NativeGpuKernelResult {
+    std::optional<std::vector<std::vector<std::byte>>> outputs;
+    std::optional<GpuError> error;
+    GpuExecutionEvidence evidence;
+    bool ok() const noexcept { return outputs.has_value() && !error.has_value(); }
+};
+
+class PendingNativeGpuKernel {
+public:
+    PendingNativeGpuKernel() = default;
+    PendingNativeGpuKernel(const PendingNativeGpuKernel&) = delete;
+    PendingNativeGpuKernel& operator=(const PendingNativeGpuKernel&) = delete;
+    PendingNativeGpuKernel(PendingNativeGpuKernel&&) noexcept = default;
+    PendingNativeGpuKernel& operator=(PendingNativeGpuKernel&&) noexcept = default;
+    bool valid() const noexcept;
+    runtime::AsyncOperationState state() const noexcept;
+    bool observed() const noexcept;
+    runtime::AsyncResource outputResource() const;
+    GpuExecutionEvidence evidence() const noexcept;
+    NativeGpuKernelResult observe() noexcept;
+private:
+    std::shared_ptr<NativeGpuKernelPendingState> state_;
+    runtime::AsyncOperation operation_;
+    PendingNativeGpuKernel(std::shared_ptr<NativeGpuKernelPendingState>, runtime::AsyncOperation);
+    friend struct NativeGpuKernelSubmission;
+    friend NativeGpuKernelSubmission submitNativeGpuKernelAsync(NativeGpuKernelRequest,
+                                                                 int) noexcept;
+};
+
+struct NativeGpuKernelSubmission {
+    std::optional<PendingNativeGpuKernel> pending;
+    std::optional<GpuError> error;
+    GpuExecutionEvidence evidence;
+    bool ok() const noexcept { return pending.has_value() && !error.has_value(); }
+};
+
+NativeGpuKernelSubmission submitNativeGpuKernelAsync(NativeGpuKernelRequest request,
+                                                      int device = 0) noexcept;
 
 GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion&,
                                         const std::vector<GpuValue>& inputs = {},

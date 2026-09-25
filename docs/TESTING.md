@@ -143,6 +143,23 @@ clipping-created color interpolation, zero/overflow/malformed inputs, PPM
 output, and a frozen perspective-cube color/depth digest. It is a native C++
 runtime test and invokes no Python or graphics framework.
 
+TH-020 native GPU graphics qualification adds:
+
+```bash
+./build/debug/v0_graphics_gpu_tests
+./build/gpu/v0_graphics_gpu_tests
+./build/gpu/v0_graphics_gpu_integration_tests
+ctest --test-dir build/gpu -R '^V0GraphicsGpu' --output-on-failure
+```
+
+The integration executable must run on a physical CUDA device; CTest code 77
+means unavailable, not qualified. It compares exact coverage masks and tight
+color/depth values for the required scene matrix, exercises async reservations
+and independent pending renders, checks same-device byte determinism, and feeds
+an observed color Tensor into existing native GPU numerical execution. The
+test records the explicit graphics D2H and later numerical H2D boundary; it is
+not zero-copy evidence.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.
