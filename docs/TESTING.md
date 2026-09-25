@@ -114,6 +114,21 @@ TH-016 PASS; CTest code 77 means unavailable, not qualified. It distinguishes
 persistent pre-generated PTX (`thiran_ptx_generation=0` during execution) from
 Thiran-side PTX generation at GPU JIT compile time.
 
+TH-017 reference-model qualification adds:
+
+```bash
+./build/debug/v0_model_deployment_tests
+./build/gpu/v0_model_gpu_integration_tests
+```
+
+The first performs actual TH-011 training, checkpoint destroy/reload/resume,
+checkpoint and bundle adversarial validation, native CPU execution, and a
+compiler/source/checkpoint-absent relocated-process run. The second must run
+with physical CUDA device access for a TH-017 PASS; CTest code 77 means
+unavailable, not qualified. It compares reference, CPU, and GPU predictions,
+checks TH-014 pending-resource release, records TH-015 fusion, and distinguishes
+persistent PTX from CUDA Driver JIT.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

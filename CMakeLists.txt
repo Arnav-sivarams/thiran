@@ -73,6 +73,8 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/autodiff/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/training/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/artifact/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/persistence/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/model/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -101,6 +103,12 @@ add_library(thiran_v0_async STATIC src/runtime/v0/Async.cpp)
 add_library(thiran_v0_storage STATIC src/storage/v0/Storage.cpp)
 target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis thiran_v0_async)
 
+add_library(thiran_v0_persistence STATIC src/persistence/v0/Persistence.cpp)
+target_link_libraries(thiran_v0_persistence PUBLIC thiran_v0_storage)
+
+add_library(thiran_v0_checkpoint STATIC src/training/v0/Checkpoint.cpp)
+target_link_libraries(thiran_v0_checkpoint PUBLIC thiran_v0_training thiran_v0_persistence)
+
 add_library(thiran_v0_tensor_region STATIC src/backend/v0/TensorRegion.cpp)
 target_link_libraries(thiran_v0_tensor_region PUBLIC thiran_v0_storage)
 
@@ -120,10 +128,31 @@ add_library(thiran_v0_process STATIC src/tooling/v0/Process.cpp)
 add_library(thiran_v0_artifact STATIC src/artifact/v0/NativeArtifacts.cpp)
 target_link_libraries(thiran_v0_artifact PUBLIC
     thiran_v0_native_cpu thiran_v0_native_gpu thiran_v0_process PRIVATE ${CMAKE_DL_LIBS})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Keep build/JIT and execution code independently discardable so the
+    # deployment-only model launcher does not retain host-compiler process code.
+    target_compile_options(thiran_v0_artifact PRIVATE -ffunction-sections -fdata-sections)
+endif()
 
 add_executable(thiran-artifact src/artifact/v0/ArtifactMain.cpp)
 target_link_libraries(thiran-artifact PRIVATE thiran_v0_artifact)
 install(TARGETS thiran-artifact RUNTIME DESTINATION bin)
+
+add_library(thiran_v0_model_runtime STATIC src/model/v0/ModelBundle.cpp)
+target_link_libraries(thiran_v0_model_runtime PUBLIC thiran_v0_artifact thiran_v0_persistence)
+
+add_library(thiran_v0_model_build STATIC src/model/v0/DeploymentBuild.cpp)
+target_link_libraries(thiran_v0_model_build PUBLIC thiran_v0_model_runtime thiran_v0_checkpoint)
+
+add_library(thiran_v0_reference_model STATIC src/model/v0/ReferenceModel.cpp)
+target_link_libraries(thiran_v0_reference_model PUBLIC thiran_v0_model_build thiran_v0_frontend)
+
+add_executable(thiran-model src/model/v0/ModelMain.cpp)
+target_link_libraries(thiran-model PRIVATE thiran_v0_model_runtime)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(thiran-model PRIVATE -Wl,--gc-sections)
+endif()
+install(TARGETS thiran-model RUNTIME DESTINATION bin)
 
 add_library(thiran_v0_interop STATIC src/interop/v0/NativeLibrary.cpp)
 target_link_libraries(thiran_v0_interop PUBLIC thiran_v0_analysis)
@@ -216,6 +245,17 @@ if(BUILD_TESTING)
     add_dependencies(v0_native_artifact_tests thiran-artifact)
     add_test(NAME V0NativeArtifactTests COMMAND v0_native_artifact_tests)
 
+    add_executable(v0_model_deployment_tests tests/model/v0/ModelDeploymentTests.cpp)
+    target_link_libraries(v0_model_deployment_tests PRIVATE thiran_v0_reference_model thiran_v0_process)
+    target_compile_definitions(v0_model_deployment_tests PRIVATE
+        TH017_CXX="${CMAKE_CXX_COMPILER}"
+        TH017_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH017_SOURCE="${CMAKE_SOURCE_DIR}"
+        TH017_BUILD="${CMAKE_BINARY_DIR}"
+        TH017_RUNTIME="$<TARGET_FILE:thiran-model>")
+    add_dependencies(v0_model_deployment_tests thiran-model)
+    add_test(NAME V0ModelDeploymentTests COMMAND v0_model_deployment_tests)
+
     if(THIRAN_ENABLE_NATIVE_GPU)
         add_executable(v0_native_gpu_integration_tests tests/backend/v0/NativeGpuIntegrationTests.cpp)
         target_link_libraries(v0_native_gpu_integration_tests PRIVATE thiran_v0_native_gpu)
@@ -231,6 +271,19 @@ if(BUILD_TESTING)
         add_test(NAME V0NativeArtifactGpuIntegrationTests
                  COMMAND v0_native_artifact_gpu_integration_tests)
         set_tests_properties(V0NativeArtifactGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
+
+        add_executable(v0_model_gpu_integration_tests
+            tests/model/v0/ModelGpuIntegrationTests.cpp)
+        target_link_libraries(v0_model_gpu_integration_tests PRIVATE
+            thiran_v0_reference_model thiran_v0_process)
+        target_compile_definitions(v0_model_gpu_integration_tests PRIVATE
+            TH017_CXX="${CMAKE_CXX_COMPILER}"
+            TH017_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+            TH017_BUILD="${CMAKE_BINARY_DIR}"
+            TH017_RUNTIME="$<TARGET_FILE:thiran-model>")
+        add_dependencies(v0_model_gpu_integration_tests thiran-model)
+        add_test(NAME V0ModelGpuIntegrationTests COMMAND v0_model_gpu_integration_tests)
+        set_tests_properties(V0ModelGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
     add_executable(v0_buffer_tests tests/storage/v0/BufferTests.cpp)

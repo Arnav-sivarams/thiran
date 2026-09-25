@@ -158,7 +158,7 @@ RuntimeValue subtractValues(const RuntimeValue& left,const RuntimeValue& right) 
     return RuntimeValue{std::move(result)};
 }
 
-std::vector<TrainingDiagnostic> verifyState(const TrainingPlan& plan,const TrainingState& state) {
+std::vector<TrainingDiagnostic> verifyStateInternal(const TrainingPlan& plan,const TrainingState& state) {
     std::vector<TrainingDiagnostic> errors;
     if (state.planSignature!=plan.signature) add(errors,"TRN11","state belongs to an incompatible training plan");
     if (state.parameters.size()!=plan.parameters.size()) {
@@ -336,10 +336,14 @@ std::vector<TrainingDiagnostic> verifyOptimizerState(const TrainingPlan& plan,co
     return errors;
 }
 
+std::vector<TrainingDiagnostic> verifyTrainingState(const TrainingPlan& plan,const TrainingState& state) {
+    return verifyStateInternal(plan,state);
+}
+
 OptimizerResult applyOptimizer(const TrainingPlan& plan,const TrainingState& state,
                                const std::vector<GradientValue>& orderedGradients) {
     OptimizerResult result;
-    auto stateErrors=verifyState(plan,state);
+    auto stateErrors=verifyStateInternal(plan,state);
     if (!stateErrors.empty()) { result.diagnostics=std::move(stateErrors); return result; }
     if (orderedGradients.size()!=plan.parameters.size()) {
         add(result.diagnostics,"TRN10","gradient count mismatch before optimizer update"); return result;
@@ -380,7 +384,7 @@ TrainingStepResult trainingStep(const TrainingPlan& plan,const TrainingState& st
     TrainingStepResult result;
     auto planErrors=verifyTrainingPlan(plan);
     if (!planErrors.empty()) { result.diagnostics=std::move(planErrors); return result; }
-    auto stateErrors=verifyState(plan,state);
+    auto stateErrors=verifyStateInternal(plan,state);
     if (!stateErrors.empty()) { result.diagnostics=std::move(stateErrors); return result; }
     const auto* fn=function(plan.source,plan.function);
     std::vector<std::optional<RuntimeValue>> arguments(fn->parameters.size());

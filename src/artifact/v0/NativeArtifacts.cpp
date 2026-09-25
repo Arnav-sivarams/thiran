@@ -830,6 +830,16 @@ std::optional<ArtifactError> writeArtifact(const NativeArtifact& artifact,
     }
 }
 
+ArtifactBytesResult encodeArtifact(const NativeArtifact& artifact) {
+    ArtifactBytesResult result;
+    if (auto invalid = validateArtifact(artifact)) {
+        result.error = std::move(invalid);
+        return result;
+    }
+    result.bytes = serializeArtifact(artifact);
+    return result;
+}
+
 ArtifactBuildResult buildCpuAot(const backend::TensorRegion& region,
                                 const NativeToolchain& toolchain,
                                 const ArtifactBuildOptions& options) {
@@ -946,10 +956,9 @@ ArtifactBuildResult buildGpuAot(const backend::TensorRegion& region,
     return result;
 }
 
-ArtifactLoadResult loadArtifact(const std::filesystem::path& path) {
+ArtifactLoadResult loadArtifactBytes(const std::vector<std::byte>& bytes) {
     ArtifactLoadResult result;
     try {
-        const auto bytes = readFile(path, maxPayloadBytes + maxRegionBytes + (4U << 20));
         Reader reader(bytes);
         for (char expected : magic)
             if (reader.u8() != static_cast<std::uint8_t>(expected))
@@ -989,6 +998,16 @@ ArtifactLoadResult loadArtifact(const std::filesystem::path& path) {
         result.error = error(ArtifactErrorCategory::Load, std::move(code), message);
     }
     return result;
+}
+
+ArtifactLoadResult loadArtifact(const std::filesystem::path& path) {
+    try {
+        return loadArtifactBytes(readFile(path, maxPayloadBytes + maxRegionBytes + (4U << 20)));
+    } catch (const std::exception& failure) {
+        ArtifactLoadResult result;
+        result.error = error(ArtifactErrorCategory::Load, "ARTIFACT-IO", failure.what());
+        return result;
+    }
 }
 
 std::string inspectArtifact(const NativeArtifact& artifact) {
@@ -1036,6 +1055,39 @@ ArtifactExecutionResult executeArtifact(const NativeArtifact& artifact,
         }
         return executeCpu(*std::get<std::unique_ptr<CpuModule>>(loaded), artifact.manifest.entry, inputs);
     }
+    auto submitted = submitArtifactGpu(artifact, inputs, device);
+    result.gpuEvidence = submitted.gpuEvidence;
+    if (!submitted.ok()) { result.error = std::move(submitted.error); return result; }
+    auto executed = submitted.pending->observe();
+    result.gpuEvidence = executed.evidence;
+    if (!executed.ok())
+        result.error = error(ArtifactErrorCategory::Execution,
+            executed.error ? executed.error->code : "GPU-EXECUTION",
+            executed.error ? executed.error->message : "GPU artifact execution failed");
+    else result.value = std::move(executed.value);
+    return result;
+}
+
+ArtifactGpuSubmission submitArtifactGpu(const NativeArtifact& artifact,
+                                        const std::vector<ArtifactValue>& inputs,
+                                        int device) {
+    ArtifactGpuSubmission result;
+    if (auto invalid = validateArtifact(artifact)) { result.error = std::move(invalid); return result; }
+    if (artifact.manifest.backend != NativeBackend::Gpu) {
+        result.error = error(ArtifactErrorCategory::Execution, "ARTIFACT-BACKEND",
+                             "asynchronous GPU submission requires a GPU artifact");
+        return result;
+    }
+    if (inputs.size() != artifact.manifest.entry.parameters.size()) {
+        result.error = error(ArtifactErrorCategory::Execution, "ARTIFACT-ARGUMENT-COUNT",
+                             "entry argument count mismatch");
+        return result;
+    }
+    for (std::size_t index = 0; index < inputs.size(); ++index)
+        if (auto invalid = validateValue(artifact.manifest.entry.parameters[index], inputs[index], index)) {
+            result.error = std::move(invalid);
+            return result;
+        }
     auto planned = backend::buildPhysicalPlan(artifact.region, backend::PhysicalDevice::Gpu,
                                               artifact.manifest.planning);
     if (!planned.ok()) {
@@ -1043,14 +1095,14 @@ ArtifactExecutionResult executeArtifact(const NativeArtifact& artifact,
         return result;
     }
     std::string ptx(reinterpret_cast<const char*>(artifact.payload.data()), artifact.payload.size());
-    auto executed = backend::executeNativeGpuPayload(
+    auto submitted = backend::submitNativeGpuPayloadAsync(
         artifact.region, *planned.plan, std::move(ptx), inputs, device);
-    result.gpuEvidence = executed.evidence;
-    if (!executed.ok()) {
+    result.gpuEvidence = submitted.evidence;
+    if (!submitted.ok()) {
         result.error = error(ArtifactErrorCategory::Execution,
-            executed.error ? executed.error->code : "GPU-EXECUTION",
-            executed.error ? executed.error->message : "GPU artifact execution failed");
-    } else result.value = std::move(executed.value);
+            submitted.error ? submitted.error->code : "GPU-EXECUTION",
+            submitted.error ? submitted.error->message : "GPU artifact submission failed");
+    } else result.pending = std::move(submitted.pending);
     return result;
 }
 

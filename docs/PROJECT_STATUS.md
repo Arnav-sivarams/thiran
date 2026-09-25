@@ -21,6 +21,8 @@ Status terms describe repository evidence, not intent.
 | Native AOT | IMPLEMENTED (V0 SUBSET) | `.tha` container, ELF/PTX payloads, typed loader, fresh-process CPU/GPU tests | Bounded TensorRegion subset; PTX uses CUDA Driver JIT | Expand only with typed backend coverage |
 | Native JIT | IMPLEMENTED (V0 SUBSET) | external-toolchain CPU JIT and Thiran-PTX/CUDA Driver GPU JIT | CPU compilation is out-of-process; no LLVM JIT | Reassess in-process lowering only with evidence |
 | JIT cache | IMPLEMENTED (LOCAL V0) | deterministic specialization keys and hit/miss tests | In-memory/process-local only | Preserve full correctness identity if extended |
+| Training checkpoints | IMPLEMENTED (REFERENCE V0) | `.thc` schema/integrity validation, transactional save, exact destroy/reload/resume tests | TH-011 f32 state and local files only; no authentication | Preserve explicit schema and optimizer-state compatibility |
+| Model deployment | IMPLEMENTED (REFERENCE V0) | `.thm` bundle, `thiran-model`, relocated CPU and physical-GPU equivalence tests | Narrow affine public ABI; trusted local native payloads; no service | Generalize only from additional accepted models |
 | Adaptation | RESEARCH HYPOTHESIS | Strategy and Region infrastructure only | No profiling or runtime switching | Establish measurable policy hypotheses |
 | Triton | PARTIAL | emitter/code-generator scaffolding | Not a working execution backend | Prove legal lowering and execution independently |
 | Distributed planning | PARTIAL | partition and communication structures in normal path | Descriptive; not Region runtime movement | Define executable semantics |

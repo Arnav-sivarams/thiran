@@ -47,6 +47,9 @@ void runtime(const std::string& id,const std::string& source,const std::string& 
 RuntimeValue matrix(std::vector<std::int64_t> shape,std::vector<std::int64_t> values) {
     return RuntimeValue{RuntimeTensor{TypeKind::I64,std::move(shape),std::move(values)}};
 }
+RuntimeValue f32Matrix(std::vector<std::int64_t> shape,std::vector<float> values) {
+    return RuntimeValue{RuntimeTensor{TypeKind::F32,std::move(shape),{},std::move(values)}};
+}
 Instruction integerInstruction(ValueId id,std::int64_t value) {
     Instruction i; i.id=id; i.op=Op::Integer; i.type=scalar(TypeKind::I64); i.integer=value;
     i.span={{0,0,1,1},{0,0,1,1}}; return i;
@@ -208,6 +211,10 @@ void sourceTests() {
     require(evaluateBinding(alias,"C").ok,"immutable alias invalidated source");
     value("S20","fn pair(x: i64) -> (i64,i64) { let y=x+1; return (y,x) }\nlet p=pair(3)","p",
         "{\"status\":\"ok\",\"kind\":\"tuple\",\"values\":[{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":4},{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":3}]}");
+    auto f32Projection=valid("S21","fn f(A:Tensor<f32,2>)->Tensor<f32,1>{let x=A[0,0]; return [x]}");
+    require(evaluateCall(f32Projection,"f",{f32Matrix({1,1},{1.5f})}).format()==
+        "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"f32\",\"shape\":[1],\"values\":[1.5]}",
+        "S21 uniform f32 tensor literal/index evaluation failed");
 }
 void diagnosticTests() {
     auto absoluteSyntax=parse("let x=1","/tmp/machine-specific/private.th");

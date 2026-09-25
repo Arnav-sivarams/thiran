@@ -210,15 +210,20 @@ private:
                 return emit(c,std::move(i),{scalar(TypeKind::Bool),{}, {}});
             } else if constexpr (std::is_same_v<N, TensorLiteralExpr>) {
                 Instruction i; i.op=Op::TensorLiteral; i.span=e.span;
+                std::optional<Type> elementType;
                 for (const auto& row : n.rows) for (const auto& element : row) {
                     auto v=expr(*element,c);
-                    if (!i64(v.fact.type)) fail(element->span,"TH005-TENSOR-ELEMENT","TH-005 tensor literals require i64 elements");
+                    if (v.fact.type!=scalar(TypeKind::I64) && v.fact.type!=scalar(TypeKind::F32))
+                        fail(element->span,"TH005-TENSOR-ELEMENT","tensor literals require i64 or f32 scalar elements");
+                    if (elementType && *elementType!=v.fact.type)
+                        fail(element->span,"TH005-TENSOR-ELEMENT","tensor literal elements require one dtype");
+                    elementType=v.fact.type;
                     i.operands.push_back(v.id);
                 }
                 auto rank = n.rows.size() == 1 ? 1U : 2U;
                 ShapeFact shape; if (rank == 1) shape.extents={static_cast<std::int64_t>(n.rows[0].size())};
                 else shape.extents={static_cast<std::int64_t>(n.rows.size()),static_cast<std::int64_t>(n.rows[0].size())};
-                return emit(c,std::move(i),{tensor(scalar(TypeKind::I64),rank),shape,{}});
+                return emit(c,std::move(i),{tensor(elementType.value_or(scalar(TypeKind::I64)),rank),shape,{}});
             } else if constexpr (std::is_same_v<N, TupleExpr>) {
                 Instruction i; i.op=Op::Tuple; i.span=e.span;
                 Type type{TypeKind::Tuple,{},0};
@@ -508,8 +513,10 @@ private:
     }
     Located index(const Expr& e, const IndexExpr& n, BlockContext& c) {
         auto object=expr(*n.object,c);
-        if (!isTensor(object.fact.type) || object.fact.type.elements[0]!=scalar(TypeKind::I64) || object.fact.type.rank>2)
-            fail(e.span,"TH005-INDEX-TYPE","indexing requires supported i64 tensor");
+        if (!isTensor(object.fact.type) || object.fact.type.rank>2 ||
+            (object.fact.type.elements[0]!=scalar(TypeKind::I64) &&
+             object.fact.type.elements[0]!=scalar(TypeKind::F32)))
+            fail(e.span,"TH005-INDEX-TYPE","indexing requires supported i64/f32 tensor");
         if (n.axes.size()>object.fact.type.rank) fail(e.span,"TH005-INDEX-RANK","index count exceeds tensor rank");
         Instruction i; i.span=e.span; i.operands={object.id};
         ShapeFact shape; std::uint32_t remaining=object.fact.type.rank;
@@ -549,7 +556,8 @@ private:
             },n.axes[d]);
         }
         for (std::size_t d=n.axes.size();d<object.fact.type.rank;++d) shape.extents.push_back(object.fact.shape.extents[d]);
-        Type type=remaining==0 ? scalar(TypeKind::I64) : tensor(scalar(TypeKind::I64),remaining);
+        const auto elementType=object.fact.type.elements[0];
+        Type type=remaining==0 ? elementType : tensor(elementType,remaining);
         i.op=anySlice ? Op::Slice : Op::Index; i.borrowedView=anySlice || remaining>0;
         return emit(c,std::move(i),{type,shape,{}});
     }

@@ -181,15 +181,19 @@ RuntimeValue indexed(const RuntimeValue& value,const Instruction& instruction,co
     if (shape.empty()) {
         std::vector<std::int64_t> coordinate;
         for (auto s:selectors) coordinate.push_back(s.start);
-        return RuntimeValue{t.values.at(offset(coordinate,t.shape))};
+        const auto flat=offset(coordinate,t.shape);
+        return t.dtype==TypeKind::F32 ? RuntimeValue{t.f32Values.at(flat)} : RuntimeValue{t.values.at(flat)};
     }
-    RuntimeTensor result{TypeKind::I64,shape,{}};
-    auto size=count(shape); result.values.reserve(size);
+    RuntimeTensor result{t.dtype,shape,{},{}};
+    auto size=count(shape);
+    if (t.dtype==TypeKind::F32) result.f32Values.reserve(size); else result.values.reserve(size);
     for (std::size_t flat=0;flat<size;++flat) {
         auto out=coordinates(flat,shape);
         std::vector<std::int64_t> source; std::size_t axis=0;
         for (auto s:selectors) source.push_back(s.start+(s.slice?out[axis++]*s.step:0));
-        result.values.push_back(t.values.at(offset(source,t.shape)));
+        const auto sourceOffset=offset(source,t.shape);
+        if (t.dtype==TypeKind::F32) result.f32Values.push_back(t.f32Values.at(sourceOffset));
+        else result.values.push_back(t.values.at(sourceOffset));
     }
     return RuntimeValue{std::move(result)};
 }
@@ -515,9 +519,13 @@ private:
                 case Op::Boolean: result.data=*i.boolean; break;
                 case Op::LoadBinding: result=bindings.at(i.binding); break;
                 case Op::TensorLiteral: {
-                    RuntimeTensor tensor{TypeKind::I64,{},{}};
+                    const auto dtype=i.type.elements.at(0).kind;
+                    RuntimeTensor tensor{dtype,{},{},{}};
                     for (auto extent:i.shape.extents) tensor.shape.push_back(*extent);
-                    for (auto id:i.operands) tensor.values.push_back(integerValue(values.at(id)));
+                    for (auto id:i.operands) {
+                        if (dtype==TypeKind::F32) tensor.f32Values.push_back(floatValue(values.at(id)));
+                        else tensor.values.push_back(integerValue(values.at(id)));
+                    }
                     result.data=std::move(tensor); break;
                 }
                 case Op::Tuple: { RuntimeTuple tuple; for (auto id:i.operands) tuple.push_back(values.at(id)); result.data=std::move(tuple); break; }

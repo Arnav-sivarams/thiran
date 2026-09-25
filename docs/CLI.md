@@ -52,6 +52,24 @@ typed entries use the C++ artifact API. It never invokes the Thiran frontend,
 host compiler, PTX generator, Python, or a framework. GPU AOT execution may and
 does invoke the CUDA Driver's PTX-to-device-code JIT.
 
+## Native model runtime
+
+TH-017 installs a separate model bundle inspector/runtime:
+
+```text
+thiran-model inspect <model.thm>
+thiran-model run <model.thm> --backend <cpu|gpu> --input <f32> [--device <ordinal>]
+```
+
+The V0 run adapter accepts the reference model's one public
+`Tensor<f32,1>[1]` input as a scalar command-line spelling. Learned weight and
+bias values are loaded and bound from the bundle; callers never provide them.
+Backend selection is mandatory. An unavailable or invalid GPU request fails
+explicitly and never falls back to CPU. CPU execution loads the embedded ELF;
+GPU execution loads the embedded persistent PTX and permits only the CUDA
+Driver's device-load JIT. Neither path invokes the Thiran compiler, a host
+compiler, the reference evaluator, Python, or a framework.
+
 ## Generated Region executor
 
 Exact help text:

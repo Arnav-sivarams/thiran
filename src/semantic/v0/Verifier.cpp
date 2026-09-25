@@ -228,8 +228,8 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
             }
             case Op::TensorLiteral: {
                 bool ok=i.type.kind==TypeKind::Tensor && i.type.elements.size()==1 &&
-                    i.type.elements[0]==scalar(TypeKind::I64) && (i.type.rank==1 || i.type.rank==2);
-                for (auto t:operands) ok &= t==scalar(TypeKind::I64); require(ok); break;
+                    numericScalar(i.type.elements[0]) && (i.type.rank==1 || i.type.rank==2);
+                for (auto t:operands) ok &= t==i.type.elements[0]; require(ok); break;
             }
             case Op::Tuple: require(i.type.kind==TypeKind::Tuple && i.type.elements==operands); break;
             case Op::Copy: require(operands.size()==1 && i.type==operands[0] && !i.binding); break;
@@ -260,7 +260,8 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                     unsigned removed=0; bool sliced=false;
                     for (auto s:i.selectors) { removed+=!s.slice; sliced|=s.slice; }
                     auto rank=operands[0].rank-removed;
-                    ok &= i.type==(rank?tensor(scalar(TypeKind::I64),rank):scalar(TypeKind::I64));
+                    const auto element=operands[0].elements[0];
+                    ok &= numericScalar(element) && i.type==(rank?tensor(element,rank):element);
                     ok &= (i.op==Op::Slice)==sliced && i.borrowedView==(sliced || rank>0);
                 }
                 require(ok); break;

@@ -126,6 +126,7 @@ PlanResult createTrainingPlan(const semantic::Module&, const TrainingPlanRequest
 std::vector<TrainingDiagnostic> verifyTrainingPlan(const TrainingPlan&);
 StateResult initializeTrainingState(const TrainingPlan&,
                                     const std::vector<semantic::RuntimeValue>& orderedParameters);
+std::vector<TrainingDiagnostic> verifyTrainingState(const TrainingPlan&, const TrainingState&);
 std::vector<TrainingDiagnostic> verifyOptimizerState(const TrainingPlan&, const TrainingState&);
 OptimizerResult applyOptimizer(const TrainingPlan&, const TrainingState&,
                                const std::vector<GradientValue>& orderedGradients);

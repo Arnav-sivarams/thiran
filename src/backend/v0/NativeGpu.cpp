@@ -940,7 +940,39 @@ struct NativeGpuPendingState {
                              "GPU literal shape is not concrete");
                     shape.push_back(static_cast<std::uint64_t>(*extent));
                 }
-                if (node.type.elements.at(0).kind == semantic::TypeKind::I64) {
+                const auto dtype = node.type.elements.at(0).kind == semantic::TypeKind::I64 ?
+                    storage::DType::I64 : storage::DType::F32;
+                const bool hasDeviceScalar = std::any_of(node.dependencies.begin(), node.dependencies.end(),
+                    [&](auto dependency) {
+                        return std::holds_alternative<DeviceTensor>(values.at(dependency));
+                    });
+                if (hasDeviceScalar) {
+                    const auto width = storage::elementWidth(dtype);
+                    const auto totalBytes = storage::checkedByteCount(
+                        storage::checkedElementCount(shape), dtype);
+                    DeviceTensor outputTensor{dtype, shape, plannedAllocation(node.id, totalBytes)};
+                    for (std::size_t index = 0; index < node.dependencies.size(); ++index) {
+                        const auto found = values.find(node.dependencies[index]);
+                        if (found == values.end() || !std::holds_alternative<DeviceTensor>(found->second))
+                            fail(GpuErrorCategory::BackendUnsupported, "GPU-MIXED-LITERAL",
+                                 "device-derived tensor literal cannot mix host and device scalars");
+                        const auto& scalar = std::get<DeviceTensor>(found->second);
+                        if (scalar.dtype != dtype || !scalar.shape.empty() ||
+                            scalar.allocation->bytes != width)
+                            fail(GpuErrorCategory::BackendUnsupported, "GPU-LITERAL-SCALAR",
+                                 "device tensor-literal operand is not a matching scalar");
+                        if (width != 0) {
+                            context.activate();
+                            driver.check(driver.cuMemcpyDtoDAsync(
+                                outputTensor.allocation->pointer + static_cast<CUdeviceptr>(index * width),
+                                scalar.allocation->pointer, width, stream.get()),
+                                "cuMemcpyDtoDAsync(tensor-literal)");
+                            ++evidence.deviceToDeviceCopies;
+                            ++evidence.streamSubmissions;
+                        }
+                    }
+                    values[node.id] = std::move(outputTensor);
+                } else if (dtype == storage::DType::I64) {
                     std::vector<std::int64_t> host;
                     for (auto dependency : node.dependencies)
                         host.push_back(std::get<std::int64_t>(values.at(dependency)));

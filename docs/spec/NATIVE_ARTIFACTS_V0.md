@@ -93,7 +93,7 @@ of the exact verified plan, and emit from that plan. CPU payloads contain the
 planned slots and fused loops. GPU payloads contain the fused PTX entries; the
 validated plan supplies host-side allocation and launch orchestration. Compiler
 constants are present in the serialized lowered region and native payload.
-Model checkpoint/parameter packaging is not part of V0.
+The `.tha` format itself still contains no model checkpoint or parameter package. TH-017 embeds validated `.tha` values inside a distinct model bundle and binds frozen parameters at the model-runtime layer; see [MODEL_DEPLOYMENT_V0.md](MODEL_DEPLOYMENT_V0.md).
 
 Checked i64 helpers, bounds checks, scalar/tensor distinctions, and ordinary
 IEEE f32 operation order are unchanged. There is no fast math, reassociation,
@@ -143,6 +143,6 @@ execution of adversarial binaries, or cryptographic integrity.
 V0 supports only the accepted native TensorRegion subset. The CPU backend uses
 the external system compiler rather than LLVM or an in-process JIT. The cache is
 process-local. Native binary bit-for-bit reproducibility is not promised even
-though metadata and cache identity are deterministic. There is no model bundle,
-checkpoint format, registry, service, container workflow, or TH-017 deployment
-surface, and no performance claim.
+though metadata and cache identity are deterministic. Model deployment is a
+separate TH-017 container around artifacts; there is no registry, service,
+container workflow, or performance claim.

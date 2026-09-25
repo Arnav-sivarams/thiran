@@ -46,6 +46,14 @@ TH-016 native AOT/JIT is a separate V0 subsystem below verified TensorRegion
 and PhysicalPlan. It does not reinterpret these historical Region strategy
 labels or make the legacy Graph/Python route a native backend.
 
+TH-017 composes the independent V0 semantic/AD/training path with that native
+artifact subsystem. A validated training checkpoint reload produces a frozen
+deployment snapshot; a model bundle then stores typed public-input and
+`ParameterId` bindings, frozen parameter bytes, and CPU/GPU `.tha` artifacts.
+The installed `thiran-model` runtime validates the bundle, supplies frozen
+parameters internally, and executes the selected native backend without the
+legacy Graph/Python route or reference evaluator.
+
 ## Region formation
 
 `TopologicalRegionFormer` computes a deterministic Kahn ordering using Graph storage index as the ready-node tie-break. It forms contiguous, strategy-homogeneous Regions. A Node joins the current Region only when a direct producer is already inside it, which guarantees weak connectedness of each induced Region subgraph.
@@ -84,7 +92,9 @@ Normal `Thiran <source-file>` continues through analyses, scheduler structures, 
 - BackendIR describes grouped kernels; it is not an in-process executable tensor runtime.
 - `Executor` is not the semantic normal execution path.
 - Triton emitters are scaffolding/stubs, not a working execution backend.
-- PyTorch emission is the current executable semantic path.
+- PyTorch emission remains the legacy Graph/Region execution path. The bounded
+  V0 TensorRegion path also has native CPU/GPU artifacts and TH-017 model-bundle
+  execution; neither path silently falls back to the other.
 
 ## Ownership and lifetime
 
@@ -111,4 +121,6 @@ No visible order depends on pointer values or unordered-container iteration.
 The legacy Graph/Region Python path could still replace an individual generated
 Python body in the future; that remains only a planned replacement point.
 TH-016 native artifacts instead operate on the independently verified V0
-TensorRegion/PhysicalPlan path and make no performance claim.
+TensorRegion/PhysicalPlan path. TH-017 packages those artifacts with validated
+frozen checkpoint parameters for reference-model deployment. Neither makes a
+performance claim.

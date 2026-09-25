@@ -30,5 +30,5 @@ cd "${repo_root}"
 cmake --preset install
 cmake --build --preset install
 cmake --install build/install --prefix "${normalized}"
-echo "Installed thiran to ${normalized}/bin/thiran"
+echo "Installed thiran, thiran-artifact, and thiran-model to ${normalized}/bin"
 echo "Add ${normalized}/bin to PATH if needed."

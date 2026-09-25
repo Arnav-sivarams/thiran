@@ -73,6 +73,12 @@ struct ArtifactLoadResult {
     bool ok() const noexcept { return artifact.has_value() && !error.has_value(); }
 };
 
+struct ArtifactBytesResult {
+    std::optional<std::vector<std::byte>> bytes;
+    std::optional<ArtifactError> error;
+    bool ok() const noexcept { return bytes.has_value() && !error.has_value(); }
+};
+
 using ArtifactValue = backend::GpuValue;
 struct ArtifactExecutionResult {
     std::optional<ArtifactValue> value;
@@ -112,10 +118,22 @@ ArtifactBuildResult buildCpuAot(const backend::TensorRegion&, const NativeToolch
                                 const ArtifactBuildOptions&);
 ArtifactBuildResult buildGpuAot(const backend::TensorRegion&, const ArtifactBuildOptions&);
 ArtifactLoadResult loadArtifact(const std::filesystem::path&);
+ArtifactLoadResult loadArtifactBytes(const std::vector<std::byte>&);
+ArtifactBytesResult encodeArtifact(const NativeArtifact&);
 std::string inspectArtifact(const NativeArtifact&);
 std::optional<ArtifactError> writeArtifact(const NativeArtifact&,
                                            const std::filesystem::path&);
 ArtifactExecutionResult executeArtifact(const NativeArtifact&,
+                                        const std::vector<ArtifactValue>& = {}, int device = 0);
+
+struct ArtifactGpuSubmission {
+    std::optional<backend::PendingGpuExecution> pending;
+    std::optional<ArtifactError> error;
+    std::optional<backend::GpuExecutionEvidence> gpuEvidence;
+    bool ok() const noexcept { return pending.has_value() && !error.has_value(); }
+};
+
+ArtifactGpuSubmission submitArtifactGpu(const NativeArtifact&,
                                         const std::vector<ArtifactValue>& = {}, int device = 0);
 ArtifactExecutionResult loadAndExecuteArtifact(const std::filesystem::path&,
                                                const std::vector<ArtifactValue>& = {}, int device = 0);
