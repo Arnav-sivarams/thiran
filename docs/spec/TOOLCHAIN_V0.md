@@ -48,3 +48,9 @@ Additional native link requirements are accepted only through verified structure
 The development build record contains current stage, entry function, native coverage, optional retained emitted-source path, output artifact path, and host compiler exit status. It is intentionally not a stable artifact manifest; TH-016 owns mature artifact/cache/JIT contracts. Generated C++ is developer inspection output and not a stable source format or native ABI.
 
 The output artifact is copied from the controlled temporary build only after successful host compilation. `run` captures and relays deterministic artifact stdout/stderr and preserves its exit status category. The finished TH-008-style ELF has ordinary host runtime dependencies and no framework dependency. No numerical performance claim is made.
+
+TH-016 leaves these historical developer commands compatible and adds the
+separate `thiran-artifact inspect/run` native runtime. A TH-009 `build` output is
+a raw standalone development executable; a TH-016 `.tha` is the versioned,
+typed, integrity-checked persistent artifact. Only the latter participates in
+the TH-016 artifact/JIT ABI and cache contracts.

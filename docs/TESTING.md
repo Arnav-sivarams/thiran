@@ -101,6 +101,19 @@ The integration suites are CMake scripts invoked by CTest. Run one directly with
 ./build/debug/function_lowering_tests
 ```
 
+TH-016 native artifact qualification adds:
+
+```bash
+./build/gpu/v0_native_artifact_tests
+./build/gpu/v0_native_artifact_gpu_integration_tests
+```
+
+The first covers CPU AOT/JIT, relocation, dependency inspection, typed ABI and
+artifact corruption. The second must run with physical CUDA device access for a
+TH-016 PASS; CTest code 77 means unavailable, not qualified. It distinguishes
+persistent pre-generated PTX (`thiran_ptx_generation=0` during execution) from
+Thiran-side PTX generation at GPU JIT compile time.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

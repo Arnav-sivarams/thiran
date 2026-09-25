@@ -22,4 +22,10 @@ Native CPU emission declares one typed scratch vector per owned physical slot an
 
 Native GPU emission appends one deterministic PTX entry per elementwise group. Execution resolves its external device tensors, obtains the terminal allocation from the verified physical slot, and launches that entry once for a nonempty group. Planner allocations are owned by one pending execution until TH-014 observation/drain. The disabled option uses singleton PTX groups through the same path. There is no CPU, evaluator, framework, or generated-Python fallback.
 
+TH-016 artifact metadata records the reuse/fusion options and digest of the
+actual verified plan. CPU ELF payloads contain its loops/slots; persistent GPU
+payloads contain its fused PTX entries. Artifact load recomputes and checks plan
+identity before the stored payload can execute, and JIT cache identity includes
+both options.
+
 The verifier recomputes legal grouping and rejects missing, duplicated, reordered, ineligible, or malformed groups and materialization boundaries. Group count and physical launch count are structural evidence only; they are not latency, throughput, utilization, or general memory-performance claims.

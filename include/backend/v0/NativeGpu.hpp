@@ -121,6 +121,11 @@ private:
                                                     const std::vector<GpuValue>&,
                                                     int,
                                                     PhysicalPlanOptions) noexcept;
+    friend GpuAsyncSubmission submitNativeGpuPayloadAsync(const TensorRegion&,
+                                                           const PhysicalPlan&,
+                                                           std::string,
+                                                           const std::vector<GpuValue>&,
+                                                           int) noexcept;
 };
 
 struct GpuAsyncSubmission {
@@ -135,6 +140,16 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion&,
                                         int device = 0,
                                         PhysicalPlanOptions options = {}) noexcept;
 
+// Executes a previously planned region with a previously generated PTX
+// payload. The plan is independently verified and the payload is loaded
+// verbatim; this path never calls the Thiran PTX emitter. The pending state
+// owns both through observation/drain.
+GpuAsyncSubmission submitNativeGpuPayloadAsync(const TensorRegion&,
+                                               const PhysicalPlan&,
+                                               std::string ptx,
+                                               const std::vector<GpuValue>& inputs = {},
+                                               int device = 0) noexcept;
+
 // Synchronous native execution. Inputs cross an explicit host-to-device
 // boundary and the result crosses an explicit device-to-host boundary before
 // this function returns. It is exactly async submit followed by observation;
@@ -143,5 +158,10 @@ GpuExecutionResult executeNativeGpu(const TensorRegion&,
                                     const std::vector<GpuValue>& inputs = {},
                                     int device = 0,
                                     PhysicalPlanOptions options = {}) noexcept;
+GpuExecutionResult executeNativeGpuPayload(const TensorRegion&,
+                                           const PhysicalPlan&,
+                                           std::string ptx,
+                                           const std::vector<GpuValue>& inputs = {},
+                                           int device = 0) noexcept;
 
 }

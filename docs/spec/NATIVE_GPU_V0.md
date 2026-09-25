@@ -27,3 +27,10 @@ The TH-014 path queues copies and kernels on a backend-private stream and record
 Discovery and execution distinguish backend unavailable, invalid device, backend unsupported, runtime/resource/driver failure, and supported semantic failure. Driver loading, initialization, device enumeration/selection, capability, context/stream/event creation, module JIT loading, symbol lookup, allocation, transfers, launch, event recording, synchronization, and result transfer are checked. Failure after reservation acquisition drains submitted stream work before releasing obligations. Deferred failures surface at observation. Dropping pending work drains it and sends an error to the device-neutral unobserved-error channel; no destructor throws. RAII releases events, modules, streams, allocations, contexts, and the driver library on every path.
 
 GPU integration tests use return code 77 for unavailable hardware so CPU-only CI remains green while still distinguishing unavailable from pass. A skipped device suite is not TH-013 qualification; checkpoint PASS requires the same suite to execute kernels on a physical GPU.
+
+TH-016 adds two explicit uses of this adapter. Persistent GPU AOT stores the
+already generated PTX and loads those exact bytes later; it is Thiran AOT to PTX
+with CUDA Driver JIT at device-load time, not fully ahead-of-time SASS. GPU JIT
+generates PTX at JIT time. Both retain the payload in the TH-014 pending state,
+and neither uses `nvcc`, `ptxas`, a framework, CPU fallback, or evaluator fallback
+at execution.

@@ -36,6 +36,22 @@ Established driver-level codes are 0 for success, 2 for invalid command usage, 3
 
 Plan and executor emission refuse normalized source/output identity, overwrite an existing output on success, do not create a missing parent directory, and report deterministic file errors.
 
+## Native artifact runtime
+
+TH-016 installs a separate minimal native runtime/inspector:
+
+```text
+thiran-artifact inspect <artifact.tha>
+thiran-artifact run <artifact.tha> [--device <ordinal>]
+```
+
+`inspect` validates the complete container before reporting its versions,
+backend, typed signature, specialization, planning identity, payload, target,
+and runtime requirements. `run` is the zero-parameter CLI adapter; parameterized
+typed entries use the C++ artifact API. It never invokes the Thiran frontend,
+host compiler, PTX generator, Python, or a framework. GPU AOT execution may and
+does invoke the CUDA Driver's PTX-to-device-code JIT.
+
 ## Generated Region executor
 
 Exact help text:

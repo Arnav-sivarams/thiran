@@ -18,9 +18,9 @@ Status terms describe repository evidence, not intent.
 | Region execution | IMPLEMENTED | one generated function per Region and explicit boundaries | Every strategy uses PyTorch | Replace individual implementations only after equivalence |
 | Tensor-bundle runtime | IMPLEMENTED | restricted load, validation, atomic output tests | Torch `.pt` dictionaries only; CPU-loaded CLI input | Harden compatibility without unrestricted deserialization |
 | Installation | IMPLEMENTED | CMake install rules, install preset, staged installation tests | Linux/WSL source installation only; no package manager | Validate future release archives |
-| AOT | NOT IMPLEMENTED | No native Region artifact compiler | `AOT` is currently a label | Design and validate a real backend |
-| JIT | NOT IMPLEMENTED | No native runtime compiler | `JIT` is currently a label | Design and validate a real backend |
-| Cache | NOT IMPLEMENTED | No specialization/artifact cache | No cache reuse | Define keys and correctness before implementation |
+| Native AOT | IMPLEMENTED (V0 SUBSET) | `.tha` container, ELF/PTX payloads, typed loader, fresh-process CPU/GPU tests | Bounded TensorRegion subset; PTX uses CUDA Driver JIT | Expand only with typed backend coverage |
+| Native JIT | IMPLEMENTED (V0 SUBSET) | external-toolchain CPU JIT and Thiran-PTX/CUDA Driver GPU JIT | CPU compilation is out-of-process; no LLVM JIT | Reassess in-process lowering only with evidence |
+| JIT cache | IMPLEMENTED (LOCAL V0) | deterministic specialization keys and hit/miss tests | In-memory/process-local only | Preserve full correctness identity if extended |
 | Adaptation | RESEARCH HYPOTHESIS | Strategy and Region infrastructure only | No profiling or runtime switching | Establish measurable policy hypotheses |
 | Triton | PARTIAL | emitter/code-generator scaffolding | Not a working execution backend | Prove legal lowering and execution independently |
 | Distributed planning | PARTIAL | partition and communication structures in normal path | Descriptive; not Region runtime movement | Define executable semantics |

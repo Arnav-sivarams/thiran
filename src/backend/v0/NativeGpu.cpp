@@ -547,10 +547,9 @@ std::string plannedPtx(const TensorRegion& region, const PhysicalPlan& plan) {
 
 class Module final {
 public:
-    Module(Driver& driver, Context& context, const TensorRegion& region, const PhysicalPlan& plan)
-        : driver_(driver), context_(context.get()) {
+    Module(Driver& driver, Context& context, std::string source)
+        : driver_(driver), context_(context.get()), source_(std::move(source)) {
         context.activate();
-        source_ = plannedPtx(region, plan);
         driver_.check(driver_.cuModuleLoadDataEx(&module_, source_.c_str(), 0, nullptr, nullptr),
                       "cuModuleLoadDataEx", GpuErrorCategory::BackendUnsupported);
     }
@@ -821,10 +820,12 @@ struct NativeGpuPendingState {
     bool finalized = false;
 
     NativeGpuPendingState(TensorRegion selectedRegion, PhysicalPlan selectedPlan,
-                          std::vector<GpuValue> selectedInputs, int ordinal)
+                          std::vector<GpuValue> selectedInputs, int ordinal,
+                          std::optional<std::string> selectedPtx = {})
         : region(std::move(selectedRegion)), plan(std::move(selectedPlan)), inputs(std::move(selectedInputs)),
           driver(), initializedDevice(initialize(driver, ordinal)), context(driver, ordinal),
-          stream(driver, context), module(driver, context, region, plan),
+          stream(driver, context),
+          module(driver, context, selectedPtx ? std::move(*selectedPtx) : plannedPtx(region, plan)),
           completion(driver, context) {
         evidence.device = initializedDevice;
         evidence.logicalTensorValues = plan.values.size();
@@ -1061,7 +1062,8 @@ struct NativeGpuPendingState {
     }
 #else
     NativeGpuPendingState(TensorRegion selectedRegion, PhysicalPlan selectedPlan,
-                          std::vector<GpuValue> selectedInputs, int)
+                          std::vector<GpuValue> selectedInputs, int,
+                          std::optional<std::string> = {})
         : region(std::move(selectedRegion)), plan(std::move(selectedPlan)),
           inputs(std::move(selectedInputs)) {}
 #endif
@@ -1182,6 +1184,114 @@ GpuExecutionResult PendingGpuExecution::observe() noexcept {
     return result;
 }
 
+#if THIRAN_ENABLE_NATIVE_GPU
+namespace {
+struct PreparedGpuSubmission {
+    std::shared_ptr<NativeGpuPendingState> state;
+    std::optional<runtime::AsyncOperation> operation;
+    std::optional<GpuError> error;
+};
+
+PreparedGpuSubmission prepareGpuSubmission(std::shared_ptr<NativeGpuPendingState> state,
+                                           const std::vector<GpuValue>& inputs) {
+    std::vector<runtime::AsyncResourceAccess> accesses;
+    for (const auto& input : inputs)
+        if (const auto* tensor = std::get_if<storage::Tensor>(&input))
+            accesses.push_back({tensor->asyncResource(), runtime::AsyncReservationKind::Read});
+    accesses.push_back({state->output, runtime::AsyncReservationKind::Write});
+
+    runtime::AsyncBackendCallbacks callbacks;
+    callbacks.submit = [state]() -> std::optional<runtime::AsyncError> {
+        try { state->submitWork(); return {}; }
+        catch (const Failure& failure) { state->failure = failure.error(); }
+        catch (const std::exception& error) { state->failure = gpuInternal(error); }
+        catch (...) {
+            state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                      "unknown native GPU submission failure"};
+        }
+        return asyncError(*state->failure);
+    };
+    callbacks.poll = [state] {
+        try {
+            if (!state->eventRecorded) return runtime::AsyncPollResult{};
+            state->context.activate();
+            const auto status = state->driver.cuEventQuery(state->completion.get());
+            if (status == cudaErrorNotReady) return runtime::AsyncPollResult{};
+            state->driver.check(status, "cuEventQuery");
+            if (state->errorAllocation && state->errorHost != 0) {
+                state->failure = GpuError{GpuErrorCategory::SemanticFailure, "TH-SPEC-I64-OVERFLOW",
+                                          "checked i64 GPU arithmetic overflow"};
+                return runtime::AsyncPollResult{runtime::AsyncPollState::Failed,
+                                                asyncError(*state->failure)};
+            }
+            return runtime::AsyncPollResult{runtime::AsyncPollState::Completed, {}};
+        } catch (const Failure& failure) { state->failure = failure.error(); }
+        catch (const std::exception& error) { state->failure = gpuInternal(error); }
+        return runtime::AsyncPollResult{runtime::AsyncPollState::Failed, asyncError(*state->failure)};
+    };
+    callbacks.wait = [state]() -> std::optional<runtime::AsyncError> {
+        try {
+            state->context.activate();
+            if (state->eventRecorded) {
+                state->driver.check(state->driver.cuEventSynchronize(state->completion.get()),
+                                    "cuEventSynchronize");
+                ++state->evidence.synchronizations;
+            }
+            if (state->failure) {
+                auto error = asyncError(*state->failure);
+                state->releaseDeviceStorage();
+                return error;
+            }
+            state->finalizeValue();
+            state->releaseDeviceStorage();
+            return {};
+        } catch (const Failure& failure) {
+            state->failure = failure.error();
+            state->releaseDeviceStorage();
+        } catch (const std::exception& error) {
+            state->failure = gpuInternal(error);
+            state->releaseDeviceStorage();
+        } catch (...) {
+            state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                      "unknown native GPU observation failure"};
+            state->releaseDeviceStorage();
+        }
+        return asyncError(*state->failure);
+    };
+    callbacks.abort = [state]() -> std::optional<runtime::AsyncError> {
+        try {
+            state->context.activate();
+            if (state->evidence.streamSubmissions != 0) {
+                state->driver.check(state->driver.cuStreamSynchronize(state->stream.get()),
+                                    "cuStreamSynchronize(abort)");
+                ++state->evidence.synchronizations;
+            }
+            state->releaseDeviceStorage();
+            return {};
+        } catch (const Failure& failure) {
+            state->releaseDeviceStorage();
+            return asyncError(failure.error());
+        } catch (const std::exception& error) {
+            state->releaseDeviceStorage();
+            return asyncError(gpuInternal(error));
+        } catch (...) {
+            state->releaseDeviceStorage();
+            return runtime::AsyncError{"GPU-INTERNAL", "unknown native GPU abort failure"};
+        }
+    };
+
+    auto submitted = runtime::submitAsyncOperation(std::move(accesses), {}, std::move(callbacks));
+    if (!submitted.ok()) {
+        auto error = state->failure.value_or(GpuError{GpuErrorCategory::RuntimeFailure,
+            submitted.error ? submitted.error->code : "GPU-ASYNC-SUBMIT",
+            submitted.error ? submitted.error->message : "native GPU async submission failed"});
+        return {std::move(state), {}, std::move(error)};
+    }
+    return {std::move(state), std::move(submitted.operation), {}};
+}
+} // namespace
+#endif
+
 GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
                                         const std::vector<GpuValue>& inputs,
                                         int device,
@@ -1195,106 +1305,15 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
         if (!planned.ok())
             fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
                  planned.errors.empty() ? "physical planning failed" : planned.errors.front());
-        auto state = std::make_shared<NativeGpuPendingState>(region, std::move(*planned.plan), inputs, device);
-        std::vector<runtime::AsyncResourceAccess> accesses;
-        for (const auto& input : inputs)
-            if (const auto* tensor = std::get_if<storage::Tensor>(&input))
-                accesses.push_back({tensor->asyncResource(), runtime::AsyncReservationKind::Read});
-        accesses.push_back({state->output, runtime::AsyncReservationKind::Write});
-
-        runtime::AsyncBackendCallbacks callbacks;
-        callbacks.submit = [state]() -> std::optional<runtime::AsyncError> {
-            try { state->submitWork(); return {}; }
-            catch (const Failure& failure) { state->failure = failure.error(); }
-            catch (const std::exception& error) { state->failure = gpuInternal(error); }
-            catch (...) {
-                state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
-                                          "unknown native GPU submission failure"};
-            }
-            return asyncError(*state->failure);
-        };
-        callbacks.poll = [state] {
-            try {
-                if (!state->eventRecorded) return runtime::AsyncPollResult{};
-                state->context.activate();
-                const auto status = state->driver.cuEventQuery(state->completion.get());
-                if (status == cudaErrorNotReady) return runtime::AsyncPollResult{};
-                state->driver.check(status, "cuEventQuery");
-                if (state->errorAllocation && state->errorHost != 0) {
-                    state->failure = GpuError{GpuErrorCategory::SemanticFailure, "TH-SPEC-I64-OVERFLOW",
-                                              "checked i64 GPU arithmetic overflow"};
-                    return runtime::AsyncPollResult{runtime::AsyncPollState::Failed,
-                                                    asyncError(*state->failure)};
-                }
-                return runtime::AsyncPollResult{runtime::AsyncPollState::Completed, {}};
-            } catch (const Failure& failure) { state->failure = failure.error(); }
-            catch (const std::exception& error) { state->failure = gpuInternal(error); }
-            return runtime::AsyncPollResult{runtime::AsyncPollState::Failed, asyncError(*state->failure)};
-        };
-        callbacks.wait = [state]() -> std::optional<runtime::AsyncError> {
-            try {
-                state->context.activate();
-                if (state->eventRecorded) {
-                    state->driver.check(state->driver.cuEventSynchronize(state->completion.get()),
-                                        "cuEventSynchronize");
-                    ++state->evidence.synchronizations;
-                }
-                if (state->failure) {
-                    auto error = asyncError(*state->failure);
-                    state->releaseDeviceStorage();
-                    return error;
-                }
-                state->finalizeValue();
-                state->releaseDeviceStorage();
-                return {};
-            } catch (const Failure& failure) {
-                state->failure = failure.error();
-                state->releaseDeviceStorage();
-            }
-            catch (const std::exception& error) {
-                state->failure = gpuInternal(error);
-                state->releaseDeviceStorage();
-            }
-            catch (...) {
-                state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
-                                          "unknown native GPU observation failure"};
-                state->releaseDeviceStorage();
-            }
-            return asyncError(*state->failure);
-        };
-        callbacks.abort = [state]() -> std::optional<runtime::AsyncError> {
-            try {
-                state->context.activate();
-                if (state->evidence.streamSubmissions != 0) {
-                    state->driver.check(state->driver.cuStreamSynchronize(state->stream.get()),
-                                        "cuStreamSynchronize(abort)");
-                    ++state->evidence.synchronizations;
-                }
-                state->releaseDeviceStorage();
-                return {};
-            } catch (const Failure& failure) {
-                state->releaseDeviceStorage();
-                return asyncError(failure.error());
-            }
-            catch (const std::exception& error) {
-                state->releaseDeviceStorage();
-                return asyncError(gpuInternal(error));
-            }
-            catch (...) {
-                state->releaseDeviceStorage();
-                return runtime::AsyncError{"GPU-INTERNAL", "unknown native GPU abort failure"};
-            }
-        };
-
-        auto submitted = runtime::submitAsyncOperation(std::move(accesses), {}, std::move(callbacks));
-        if (!submitted.ok()) {
-            result.error = state->failure.value_or(GpuError{GpuErrorCategory::RuntimeFailure,
-                submitted.error ? submitted.error->code : "GPU-ASYNC-SUBMIT",
-                submitted.error ? submitted.error->message : "native GPU async submission failed"});
-            result.evidence = state->evidence;
+        auto state = std::make_shared<NativeGpuPendingState>(
+            region, std::move(*planned.plan), inputs, device);
+        auto prepared = prepareGpuSubmission(std::move(state), inputs);
+        if (prepared.error) {
+            result.error = std::move(prepared.error);
+            result.evidence = prepared.state->evidence;
             return result;
         }
-        result.pending = PendingGpuExecution(state, std::move(*submitted.operation));
+        result.pending = PendingGpuExecution(prepared.state, std::move(*prepared.operation));
         result.evidence = result.pending->evidence();
         return result;
     } catch (const Failure& failure) {
@@ -1316,11 +1335,74 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
     return result;
 }
 
+GpuAsyncSubmission submitNativeGpuPayloadAsync(const TensorRegion& region,
+                                               const PhysicalPlan& plan,
+                                               std::string ptxSource,
+                                               const std::vector<GpuValue>& inputs,
+                                               int device) noexcept {
+    GpuAsyncSubmission result;
+    result.evidence.device.backendBuilt = nativeGpuBackendBuilt();
+#if THIRAN_ENABLE_NATIVE_GPU
+    try {
+        preflight(region, inputs);
+        if (ptxSource.empty())
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-MISSING-PTX",
+                 "persistent GPU payload is empty");
+        if (plan.device != PhysicalDevice::Gpu)
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-PLAN-TARGET",
+                 "persistent plan does not target GPU");
+        const auto verified = verifyPhysicalPlan(region, plan);
+        if (!verified.ok())
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+                 verified.errors.empty() ? "persistent physical plan failed verification" :
+                                           verified.errors.front());
+        auto state = std::make_shared<NativeGpuPendingState>(
+            region, plan, inputs, device, std::move(ptxSource));
+        auto prepared = prepareGpuSubmission(std::move(state), inputs);
+        if (prepared.error) {
+            result.error = std::move(prepared.error);
+            result.evidence = prepared.state->evidence;
+            return result;
+        }
+        result.pending = PendingGpuExecution(prepared.state, std::move(*prepared.operation));
+        result.evidence = result.pending->evidence();
+        return result;
+    } catch (const Failure& failure) {
+        result.error = failure.error();
+    } catch (const std::exception& error) {
+        result.error = gpuInternal(error);
+    } catch (...) {
+        result.error = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
+                                "unknown persistent GPU setup failure"};
+    }
+#else
+    (void)region;
+    (void)plan;
+    (void)ptxSource;
+    (void)inputs;
+    (void)device;
+    result.error = GpuError{GpuErrorCategory::BackendUnavailable, "GPU-BACKEND-NOT-BUILT",
+                            "native GPU backend was disabled at build time"};
+#endif
+    return result;
+}
+
 GpuExecutionResult executeNativeGpu(const TensorRegion& region,
                                     const std::vector<GpuValue>& inputs,
                                     int device,
                                     PhysicalPlanOptions options) noexcept {
     auto submitted = submitNativeGpuAsync(region, inputs, device, options);
+    if (!submitted.ok()) return {{}, submitted.error, submitted.evidence};
+    return submitted.pending->observe();
+}
+
+GpuExecutionResult executeNativeGpuPayload(const TensorRegion& region,
+                                           const PhysicalPlan& plan,
+                                           std::string ptxSource,
+                                           const std::vector<GpuValue>& inputs,
+                                           int device) noexcept {
+    auto submitted = submitNativeGpuPayloadAsync(
+        region, plan, std::move(ptxSource), inputs, device);
     if (!submitted.ok()) return {{}, submitted.error, submitted.evidence};
     return submitted.pending->observe();
 }

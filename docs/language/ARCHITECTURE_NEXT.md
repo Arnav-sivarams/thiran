@@ -1,6 +1,6 @@
 # Future compiler and execution architecture (TH-001)
 
-**Design, not implementation.** The current R12 path is a C++20 frontend flattened to one single-result Graph, deterministic Region planning, and PyTorch emission. Planning labels `AOT`, `JIT`, and `FALLBACK` do not execute different native implementations. The `Input -> ReLU -> ReLU -> Output` `--plan` crash is a TH-002 baseline defect and is not addressed here.
+**Historical design document.** The R12 path described here is a C++20 frontend flattened to one single-result Graph, deterministic Region planning, and PyTorch emission. Its planning labels `AOT`, `JIT`, and `FALLBACK` still do not execute different native implementations. TH-016 later adds real native AOT/JIT below the separate verified V0 TensorRegion/PhysicalPlan path; it does not reinterpret these labels. The `Input -> ReLU -> ReLU -> Output` `--plan` crash was a TH-002 baseline defect and is not addressed here.
 
 ## Minimum pipeline and responsibility
 

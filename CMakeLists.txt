@@ -52,6 +52,7 @@ configure_file(
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include_directories(include "${CMAKE_BINARY_DIR}/generated")
 
@@ -71,6 +72,7 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/tooling/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/autodiff/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/training/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/artifact/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -113,13 +115,22 @@ target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_physical_plan PRIVAT
 target_compile_definitions(thiran_v0_native_gpu PRIVATE
     THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
 
+add_library(thiran_v0_process STATIC src/tooling/v0/Process.cpp)
+
+add_library(thiran_v0_artifact STATIC src/artifact/v0/NativeArtifacts.cpp)
+target_link_libraries(thiran_v0_artifact PUBLIC
+    thiran_v0_native_cpu thiran_v0_native_gpu thiran_v0_process PRIVATE ${CMAKE_DL_LIBS})
+
+add_executable(thiran-artifact src/artifact/v0/ArtifactMain.cpp)
+target_link_libraries(thiran-artifact PRIVATE thiran_v0_artifact)
+install(TARGETS thiran-artifact RUNTIME DESTINATION bin)
+
 add_library(thiran_v0_interop STATIC src/interop/v0/NativeLibrary.cpp)
 target_link_libraries(thiran_v0_interop PUBLIC thiran_v0_analysis)
 
 add_library(thiran_v0_tooling STATIC
-    src/tooling/v0/Process.cpp
     src/tooling/v0/Driver.cpp)
-target_link_libraries(thiran_v0_tooling PUBLIC thiran_v0_native_cpu thiran_v0_interop)
+target_link_libraries(thiran_v0_tooling PUBLIC thiran_v0_native_cpu thiran_v0_interop thiran_v0_process)
 
 add_executable(thiran-v0 src/tooling/v0/Main.cpp)
 target_link_libraries(thiran-v0 PRIVATE thiran_v0_tooling)
@@ -194,11 +205,32 @@ if(BUILD_TESTING)
     target_link_libraries(v0_native_gpu_tests PRIVATE thiran_v0_native_gpu)
     add_test(NAME V0NativeGpuTests COMMAND v0_native_gpu_tests)
 
+    add_executable(v0_native_artifact_tests tests/artifact/v0/NativeArtifactTests.cpp)
+    target_link_libraries(v0_native_artifact_tests PRIVATE thiran_v0_artifact)
+    target_compile_definitions(v0_native_artifact_tests PRIVATE
+        TH016_CXX="${CMAKE_CXX_COMPILER}"
+        TH016_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH016_SOURCE="${CMAKE_SOURCE_DIR}"
+        TH016_BUILD="${CMAKE_BINARY_DIR}"
+        TH016_RUNTIME="$<TARGET_FILE:thiran-artifact>")
+    add_dependencies(v0_native_artifact_tests thiran-artifact)
+    add_test(NAME V0NativeArtifactTests COMMAND v0_native_artifact_tests)
+
     if(THIRAN_ENABLE_NATIVE_GPU)
         add_executable(v0_native_gpu_integration_tests tests/backend/v0/NativeGpuIntegrationTests.cpp)
         target_link_libraries(v0_native_gpu_integration_tests PRIVATE thiran_v0_native_gpu)
         add_test(NAME V0NativeGpuIntegrationTests COMMAND v0_native_gpu_integration_tests)
         set_tests_properties(V0NativeGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
+
+        add_executable(v0_native_artifact_gpu_integration_tests
+            tests/artifact/v0/NativeArtifactGpuIntegrationTests.cpp)
+        target_link_libraries(v0_native_artifact_gpu_integration_tests PRIVATE thiran_v0_artifact)
+        target_compile_definitions(v0_native_artifact_gpu_integration_tests PRIVATE
+            TH016_RUNTIME="$<TARGET_FILE:thiran-artifact>")
+        add_dependencies(v0_native_artifact_gpu_integration_tests thiran-artifact)
+        add_test(NAME V0NativeArtifactGpuIntegrationTests
+                 COMMAND v0_native_artifact_gpu_integration_tests)
+        set_tests_properties(V0NativeArtifactGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
     add_executable(v0_buffer_tests tests/storage/v0/BufferTests.cpp)

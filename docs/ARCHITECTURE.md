@@ -42,6 +42,10 @@ The CLI routes source programs through `frontend::SourceManager`, source-spanned
 
 `BaselineStrategyClassifier` assigns exactly one deterministic decision to each live Node. It uses Graph IR and resolved shape metadata. Classification labels are `AOT`, `JIT`, and `FALLBACK`; they are planning labels, not distinct runtime implementations.
 
+TH-016 native AOT/JIT is a separate V0 subsystem below verified TensorRegion
+and PhysicalPlan. It does not reinterpret these historical Region strategy
+labels or make the legacy Graph/Python route a native backend.
+
 ## Region formation
 
 `TopologicalRegionFormer` computes a deterministic Kahn ordering using Graph storage index as the ready-node tie-break. It forms contiguous, strategy-homogeneous Regions. A Node joins the current Region only when a direct producer is already inside it, which guarantees weak connectedness of each induced Region subgraph.
@@ -104,4 +108,7 @@ No visible order depends on pointer values or unordered-container iteration.
 
 ## Future replacement points
 
-Future AOT or JIT artifacts may replace a Region function’s PyTorch body while retaining verified plan boundaries, explicit input/output contracts, and orchestration. That is a planned replacement point, not an implemented backend or performance result.
+The legacy Graph/Region Python path could still replace an individual generated
+Python body in the future; that remains only a planned replacement point.
+TH-016 native artifacts instead operate on the independently verified V0
+TensorRegion/PhysicalPlan path and make no performance claim.

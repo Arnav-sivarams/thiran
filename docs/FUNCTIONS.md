@@ -21,4 +21,4 @@ Calls are expanded deterministically into one ordinary Graph. Parameters, calls,
 
 Limits are 4096 functions per module, 256 parameters, 4096 body assignments, 256 expansion depth, 1,000,000 expanded Nodes, 100 diagnostics, and 1024 bytes for a generated internal name. These bounds do not claim complete safety against malicious input.
 
-There are no closures, mutation, runtime function objects, overloads, default or variadic arguments, multiple returns, explicit tensor types, generics, classes, records, methods, native calls, or native AOT/JIT.
+There are no closures, mutation, runtime function objects, overloads, default or variadic arguments, multiple returns, generics, classes, records, methods, or source-level native calls. The bounded V0 typed function subset can be selected as a TH-016 native AOT/JIT artifact entry; this does not add source syntax or first-class function values.
