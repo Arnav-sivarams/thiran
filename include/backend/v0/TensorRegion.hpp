@@ -3,6 +3,7 @@
 #include "analysis/v0/Ownership.hpp"
 
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@ enum class RegionOp {
     Float,
     TensorLiteral,
     Alias,
+    Copy,
     Negate,
     Add,
     Subtract,
@@ -35,6 +37,11 @@ struct RegionNode {
     std::optional<std::int64_t> integer;
     std::optional<float> floating;
     std::vector<semantic::Check> checks;
+    // TH-006 facts retained for physical planning. ResourceId is logical
+    // provenance; it is never treated as a physical buffer identifier.
+    analysis::ProvenanceKind provenance = analysis::ProvenanceKind::NoResource;
+    std::set<analysis::ResourceId> resources;
+    std::set<semantic::BindingId> viewRoots;
 };
 
 struct TensorRegion {

@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -121,6 +122,7 @@ public:
         load(cuMemFree, "cuMemFree_v2");
         load(cuMemcpyHtoDAsync, "cuMemcpyHtoDAsync_v2");
         load(cuMemcpyDtoHAsync, "cuMemcpyDtoHAsync_v2");
+        load(cuMemcpyDtoDAsync, "cuMemcpyDtoDAsync_v2");
         load(cuModuleLoadDataEx, "cuModuleLoadDataEx");
         load(cuModuleUnload, "cuModuleUnload");
         load(cuModuleGetFunction, "cuModuleGetFunction");
@@ -171,6 +173,7 @@ public:
     CUresult (*cuMemFree)(CUdeviceptr) = nullptr;
     CUresult (*cuMemcpyHtoDAsync)(CUdeviceptr, const void*, std::size_t, CUstream) = nullptr;
     CUresult (*cuMemcpyDtoHAsync)(void*, CUdeviceptr, std::size_t, CUstream) = nullptr;
+    CUresult (*cuMemcpyDtoDAsync)(CUdeviceptr, CUdeviceptr, std::size_t, CUstream) = nullptr;
     CUresult (*cuModuleLoadDataEx)(CUmodule*, const void*, unsigned int, void*, void*) = nullptr;
     CUresult (*cuModuleUnload)(CUmodule) = nullptr;
     CUresult (*cuModuleGetFunction)(CUfunction*, CUmodule, const char*) = nullptr;
@@ -416,11 +419,138 @@ std::string ptx() {
     return text;
 }
 
+const RegionNode& regionNode(const TensorRegion& region, semantic::ValueId id) {
+    const auto found = std::find_if(region.nodes.begin(), region.nodes.end(),
+        [&](const RegionNode& candidate) { return candidate.id == id; });
+    if (found == region.nodes.end())
+        fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN", "planned value is absent from TensorRegion");
+    return *found;
+}
+
+semantic::ValueId canonicalAlias(const TensorRegion& region, semantic::ValueId id) {
+    std::set<semantic::ValueId> seen;
+    while (seen.insert(id).second) {
+        const auto& current = regionNode(region, id);
+        if (current.op != RegionOp::Alias || current.dependencies.size() != 1) break;
+        id = current.dependencies.front();
+    }
+    return id;
+}
+
+bool groupElementwise(const TensorRegion& region, const FusionGroup& group) {
+    if (group.nodes.empty()) return false;
+    const auto op = regionNode(region, group.nodes.front()).op;
+    return op == RegionOp::Negate || op == RegionOp::Add ||
+           op == RegionOp::Subtract || op == RegionOp::ElementMultiply;
+}
+
+std::vector<semantic::ValueId> groupInputs(const TensorRegion& region, const FusionGroup& group) {
+    std::set<semantic::ValueId> inside(group.nodes.begin(), group.nodes.end());
+    std::set<semantic::ValueId> seen;
+    std::vector<semantic::ValueId> inputs;
+    for (auto id : group.nodes)
+        for (auto dependency : regionNode(region, id).dependencies) {
+            dependency = canonicalAlias(region, dependency);
+            if (!inside.contains(dependency) && seen.insert(dependency).second) inputs.push_back(dependency);
+        }
+    return inputs;
+}
+
+std::string groupKernelName(const FusionGroup& group, storage::DType dtype) {
+    return "thiran_group_" + std::to_string(group.id) +
+           (dtype == storage::DType::I64 ? "_i64" : "_f32");
+}
+
+std::string groupPtx(const TensorRegion& region, const FusionGroup& group) {
+    const bool isF32 = group.type.elements.at(0).kind == semantic::TypeKind::F32;
+    const auto dtype = isF32 ? storage::DType::F32 : storage::DType::I64;
+    const auto inputs = groupInputs(region, group);
+    std::map<semantic::ValueId, unsigned> registers;
+    unsigned next = isF32 ? 1U : 32U;
+    for (auto id : inputs) registers[id] = next++;
+    for (auto id : group.nodes) registers[id] = next++;
+    std::ostringstream out;
+    out << ".visible .entry " << groupKernelName(group, dtype) << "(\n .param .u64 out";
+    for (std::size_t index = 0; index < inputs.size(); ++index)
+        out << ", .param .u64 input" << index;
+    out << ", .param .u64 count, .param .u64 error) {\n"
+        << " .reg .pred %p<4>; .reg .b32 %r<8>; .reg .b64 %rd<"
+        << std::max<unsigned>(64U, next + 1U) << ">;";
+    if (isF32) out << " .reg .f32 %f<" << std::max<unsigned>(8U, next + 1U) << ">;";
+    const std::string done = "DONE_G" + std::to_string(group.id);
+    out << "\n mov.u32 %r1,%ctaid.x; mov.u32 %r2,%ntid.x; mov.u32 %r3,%tid.x;\n"
+        << " mad.lo.s32 %r4,%r1,%r2,%r3; cvt.u64.u32 %rd1,%r4;\n"
+        << " ld.param.u64 %rd2,[count]; setp.ge.u64 %p1,%rd1,%rd2; @%p1 bra " << done << ";\n"
+        << " mul.lo.u64 %rd3,%rd1," << (isF32 ? 4 : 8) << ";\n"
+        << " ld.param.u64 %rd4,[out]; add.u64 %rd5,%rd4,%rd3;\n";
+    for (std::size_t index = 0; index < inputs.size(); ++index) {
+        out << " ld.param.u64 %rd10,[input" << index << "]; add.u64 %rd11,%rd10,%rd3;\n";
+        if (isF32) out << " ld.global.f32 %f" << registers.at(inputs[index]) << ",[%rd11];\n";
+        else out << " ld.global.s64 %rd" << registers.at(inputs[index]) << ",[%rd11];\n";
+    }
+    auto registerName = [&](semantic::ValueId id) {
+        id = canonicalAlias(region, id);
+        return std::string(isF32 ? "%f" : "%rd") + std::to_string(registers.at(id));
+    };
+    for (std::size_t index = 0; index < group.nodes.size(); ++index) {
+        const auto& operation = regionNode(region, group.nodes[index]);
+        const auto destination = registerName(operation.id);
+        const auto left = registerName(operation.dependencies[0]);
+        const std::string label = "NOERR_G" + std::to_string(group.id) + "_N" + std::to_string(index);
+        if (isF32) {
+            if (operation.op == RegionOp::Negate) out << " neg.f32 " << destination << ',' << left << ";\n";
+            else {
+                const char* instruction = operation.op == RegionOp::Add ? "add" :
+                    operation.op == RegionOp::Subtract ? "sub" : "mul";
+                out << ' ' << instruction << ".rn.f32 " << destination << ',' << left << ','
+                    << registerName(operation.dependencies[1]) << ";\n";
+            }
+            continue;
+        }
+        if (operation.op == RegionOp::Negate) {
+            out << " neg.s64 " << destination << ',' << left << ";\n"
+                << " setp.eq.s64 %p2," << left << ",0x8000000000000000; @!%p2 bra " << label << ";\n";
+        } else if (operation.op == RegionOp::Add) {
+            const auto right = registerName(operation.dependencies[1]);
+            out << " add.s64 " << destination << ',' << left << ',' << right << ";\n"
+                << " xor.b64 %rd12," << destination << ',' << left << "; xor.b64 %rd13,"
+                << destination << ',' << right << "; and.b64 %rd14,%rd12,%rd13;\n"
+                << " setp.lt.s64 %p2,%rd14,0; @!%p2 bra " << label << ";\n";
+        } else if (operation.op == RegionOp::Subtract) {
+            const auto right = registerName(operation.dependencies[1]);
+            out << " sub.s64 " << destination << ',' << left << ',' << right << ";\n"
+                << " xor.b64 %rd12," << left << ',' << right << "; xor.b64 %rd13,"
+                << destination << ',' << left << "; and.b64 %rd14,%rd12,%rd13;\n"
+                << " setp.lt.s64 %p2,%rd14,0; @!%p2 bra " << label << ";\n";
+        } else {
+            const auto right = registerName(operation.dependencies[1]);
+            out << " mul.lo.s64 " << destination << ',' << left << ',' << right << ";\n"
+                << " mul.hi.s64 %rd12," << left << ',' << right << "; shr.s64 %rd13,"
+                << destination << ",63; setp.ne.s64 %p2,%rd12,%rd13; @!%p2 bra " << label << ";\n";
+        }
+        out << " ld.param.u64 %rd15,[error]; mov.u32 %r5,1; atom.global.exch.b32 %r6,[%rd15],%r5;\n"
+            << label << ":\n";
+    }
+    const auto terminal = registerName(group.output);
+    if (isF32) out << " st.global.f32 [%rd5]," << terminal << ";\n";
+    else out << " st.global.u64 [%rd5]," << terminal << ";\n";
+    out << done << ": ret; }\n";
+    return out.str();
+}
+
+std::string plannedPtx(const TensorRegion& region, const PhysicalPlan& plan) {
+    std::string result = ptx();
+    for (const auto& group : plan.fusionGroups)
+        if (groupElementwise(region, group)) result += groupPtx(region, group);
+    return result;
+}
+
 class Module final {
 public:
-    Module(Driver& driver, Context& context) : driver_(driver), context_(context.get()) {
+    Module(Driver& driver, Context& context, const TensorRegion& region, const PhysicalPlan& plan)
+        : driver_(driver), context_(context.get()) {
         context.activate();
-        source_ = ptx();
+        source_ = plannedPtx(region, plan);
         driver_.check(driver_.cuModuleLoadDataEx(&module_, source_.c_str(), 0, nullptr, nullptr),
                       "cuModuleLoadDataEx", GpuErrorCategory::BackendUnsupported);
     }
@@ -467,7 +597,7 @@ std::string kernelName(RegionOp op, storage::DType dtype) {
     return name;
 }
 
-void launchUnary(Driver& driver, Context& context, Stream& stream, Module& module,
+[[maybe_unused]] void launchUnary(Driver& driver, Context& context, Stream& stream, Module& module,
                  const DeviceTensor& input, DeviceTensor& output,
                  const DeviceAllocationPtr& error, GpuExecutionEvidence& evidence) {
     const auto count = storage::checkedElementCount(output.shape);
@@ -519,7 +649,8 @@ void copyFromDevice(Driver& driver, Context& context, Stream& stream, void* dest
 DeviceTensor upload(Driver& driver, Context& context, Stream& stream,
                     const storage::Tensor& tensor,
                     std::deque<std::vector<std::byte>>& staging,
-                    GpuExecutionEvidence& evidence) {
+                    GpuExecutionEvidence& evidence,
+                    DeviceAllocationPtr destination = {}) {
     const auto& descriptor = tensor.descriptor();
     storage::verifyDescriptor(descriptor);
     if ((descriptor.dtype != storage::DType::I64 && descriptor.dtype != storage::DType::F32) ||
@@ -529,8 +660,12 @@ DeviceTensor upload(Driver& driver, Context& context, Stream& stream,
     if (descriptor.view || descriptor.elementOffset != 0 || !tensor.isContiguousRowMajor())
         fail(GpuErrorCategory::BackendUnsupported, "GPU-UNSUPPORTED-LAYOUT",
              "native GPU requires materialized offset-zero contiguous row-major tensors");
+    if (destination && destination->bytes != descriptor.storage.byteLength())
+        fail(GpuErrorCategory::RuntimeFailure, "GPU-PLAN-CAPACITY",
+             "planned device allocation has incompatible byte capacity");
     DeviceTensor device{descriptor.dtype, descriptor.shape,
-                        allocate(driver, context, descriptor.storage.byteLength(), evidence)};
+                        destination ? std::move(destination) :
+                                      allocate(driver, context, descriptor.storage.byteLength(), evidence)};
     if (descriptor.storage.byteLength() == 0) return device;
     staging.emplace_back(descriptor.storage.byteLength());
     if (descriptor.dtype == storage::DType::I64) {
@@ -546,7 +681,7 @@ DeviceTensor upload(Driver& driver, Context& context, Stream& stream,
     return device;
 }
 
-void launchBinary(Driver& driver, Context& context, Stream& stream, Module& module,
+[[maybe_unused]] void launchBinary(Driver& driver, Context& context, Stream& stream, Module& module,
                   RegionOp op, const DeviceTensor& lhs, const DeviceTensor& rhs,
                   DeviceTensor& output, const DeviceAllocationPtr& error,
                   GpuExecutionEvidence& evidence) {
@@ -588,12 +723,78 @@ void launchIndex(Driver& driver, Context& context, Stream& stream, Module& modul
     ++evidence.streamSubmissions;
 }
 
+void copyDevice(Driver& driver, Context& context, Stream& stream,
+                const DeviceTensor& input, DeviceTensor& output,
+                GpuExecutionEvidence& evidence) {
+    if (input.dtype != output.dtype || input.shape != output.shape ||
+        input.allocation->bytes != output.allocation->bytes)
+        fail(GpuErrorCategory::RuntimeFailure, "GPU-PLAN-COPY", "planned device copy is incompatible");
+    if (input.allocation->bytes == 0) return;
+    context.activate();
+    driver.check(driver.cuMemcpyDtoDAsync(output.allocation->pointer, input.allocation->pointer,
+                                         input.allocation->bytes, stream.get()),
+                 "cuMemcpyDtoDAsync");
+    ++evidence.deviceToDeviceCopies;
+    ++evidence.streamSubmissions;
+}
+
+void launchGroup(Driver& driver, Context& context, Stream& stream, Module& module,
+                 const TensorRegion& region, const FusionGroup& group,
+                 const std::map<semantic::ValueId, DeviceValue>& values,
+                 DeviceTensor& output, const DeviceAllocationPtr& error,
+                 GpuExecutionEvidence& evidence) {
+    const auto inputs = groupInputs(region, group);
+    if (inputs.empty())
+        fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+             "elementwise fusion group has no materialized input");
+    std::vector<const DeviceTensor*> tensors;
+    tensors.reserve(inputs.size());
+    for (auto id : inputs) {
+        const auto found = values.find(id);
+        if (found == values.end() || !std::holds_alternative<DeviceTensor>(found->second))
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+                 "fusion input is not materialized before launch");
+        tensors.push_back(&std::get<DeviceTensor>(found->second));
+    }
+    for (const auto* input : tensors)
+        if (input->dtype != output.dtype || input->shape != output.shape)
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-RUNTIME-SHAPE",
+                 "runtime fused elementwise inputs require equal dtype and shape");
+    const auto count = storage::checkedElementCount(output.shape);
+    if (count == 0) return;
+    constexpr std::uint64_t block = 256;
+    const auto grid64 = count / block + static_cast<std::uint64_t>(count % block != 0);
+    if (grid64 > std::numeric_limits<unsigned int>::max())
+        fail(GpuErrorCategory::BackendUnsupported, "GPU-LAUNCH-OVERFLOW", "GPU grid dimension overflow");
+    context.activate();
+    CUdeviceptr outPointer = output.allocation->pointer;
+    std::vector<CUdeviceptr> inputPointers;
+    inputPointers.reserve(tensors.size());
+    for (const auto* input : tensors) inputPointers.push_back(input->allocation->pointer);
+    std::uint64_t elements = count;
+    CUdeviceptr errorPointer = error ? error->pointer : 0;
+    std::vector<void*> arguments;
+    arguments.reserve(inputPointers.size() + 3);
+    arguments.push_back(&outPointer);
+    for (auto& pointer : inputPointers) arguments.push_back(&pointer);
+    arguments.push_back(&elements);
+    arguments.push_back(&errorPointer);
+    driver.check(driver.cuLaunchKernel(module.function(groupKernelName(group, output.dtype)),
+                                      static_cast<unsigned int>(grid64), 1, 1,
+                                      static_cast<unsigned int>(block), 1, 1,
+                                      0, stream.get(), arguments.data(), nullptr),
+                 "cuLaunchKernel(fusion-group)");
+    ++evidence.kernelLaunches;
+    ++evidence.streamSubmissions;
+}
+
 #endif
 
 }
 
 struct NativeGpuPendingState {
     TensorRegion region;
+    PhysicalPlan plan;
     std::vector<GpuValue> inputs;
     runtime::AsyncResource output = runtime::AsyncResource::create();
     GpuExecutionEvidence evidence;
@@ -608,6 +809,7 @@ struct NativeGpuPendingState {
     Event completion;
     std::map<semantic::ValueId, DeviceValue> values;
     std::map<std::uint64_t, DeviceAllocationPtr> uploaded;
+    std::map<PhysicalSlotId, DeviceAllocationPtr> slotAllocations;
     std::deque<std::vector<std::byte>> uploadStaging;
     DeviceAllocationPtr errorAllocation;
     std::uint32_t errorHost = 0;
@@ -618,12 +820,70 @@ struct NativeGpuPendingState {
     bool eventRecorded = false;
     bool finalized = false;
 
-    NativeGpuPendingState(TensorRegion selectedRegion, std::vector<GpuValue> selectedInputs, int ordinal)
-        : region(std::move(selectedRegion)), inputs(std::move(selectedInputs)),
+    NativeGpuPendingState(TensorRegion selectedRegion, PhysicalPlan selectedPlan,
+                          std::vector<GpuValue> selectedInputs, int ordinal)
+        : region(std::move(selectedRegion)), plan(std::move(selectedPlan)), inputs(std::move(selectedInputs)),
           driver(), initializedDevice(initialize(driver, ordinal)), context(driver, ordinal),
-          stream(driver, context), module(driver, context),
+          stream(driver, context), module(driver, context, region, plan),
           completion(driver, context) {
         evidence.device = initializedDevice;
+        evidence.logicalTensorValues = plan.values.size();
+        evidence.physicalSlots = plan.slots.size();
+        evidence.fusionGroups = plan.fusionGroups.size();
+        for (const auto& node : region.nodes)
+            if (node.type.kind == semantic::TypeKind::Tensor && node.op != RegionOp::Input &&
+                node.op != RegionOp::Alias && node.id != region.output)
+                ++evidence.logicalIntermediates;
+        for (const auto& value : plan.values) {
+            if (value.value == value.root && value.materialized &&
+                value.classification == PhysicalValueClass::Temporary)
+                ++evidence.materializedIntermediates;
+        }
+        for (const auto& slot : plan.slots) {
+            if (slot.reusable && !slot.external) ++evidence.physicalTemporarySlots;
+            std::uint64_t roots = 0;
+            for (auto id : slot.values) {
+                const auto* value = plan.value(id);
+                roots += value && value->value == value->root;
+            }
+            if (roots > 1) evidence.reusedSlotAssignments += roots - 1;
+        }
+        for (const auto& group : plan.fusionGroups) evidence.fusedKernelGroups += group.fused;
+    }
+
+    DeviceAllocationPtr plannedAllocation(semantic::ValueId value, std::size_t byteCount) {
+        const auto* mapping = plan.value(value);
+        if (byteCount == 0) return allocate(driver, context, 0, evidence);
+        if (!mapping || !mapping->slot)
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+                 "materialized tensor has no planned slot");
+        const auto* slot = plan.slot(*mapping->slot);
+        if (!slot || slot->device != PhysicalDevice::Gpu ||
+            (slot->capacityBytes && *slot->capacityBytes < byteCount))
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-PLAN-CAPACITY",
+                 "planned slot cannot satisfy runtime device allocation");
+        auto found = slotAllocations.find(slot->id);
+        if (found != slotAllocations.end()) {
+            if (found->second->bytes != byteCount)
+                fail(GpuErrorCategory::BackendUnsupported, "GPU-PLAN-CAPACITY",
+                     "reused dynamic slot has incompatible runtime byte size");
+            return found->second;
+        }
+        auto allocation = allocate(driver, context, byteCount, evidence);
+        slotAllocations.emplace(slot->id, allocation);
+        ++evidence.plannerOwnedAllocations;
+        evidence.retainedPlannerAllocations = slotAllocations.size();
+        return allocation;
+    }
+
+    void releaseDeviceStorage() noexcept {
+        deviceOutput.reset();
+        values.clear();
+        uploaded.clear();
+        slotAllocations.clear();
+        errorAllocation.reset();
+        uploadStaging.clear();
+        evidence.retainedPlannerAllocations = 0;
     }
 
     void ensureErrorBuffer() {
@@ -661,11 +921,16 @@ struct NativeGpuPendingState {
             }
         }
 
+        std::set<FusionGroupId> executedGroups;
         for (const auto& node : region.nodes) {
             if (node.op == RegionOp::Input) continue;
             if (node.op == RegionOp::Integer) values[node.id] = *node.integer;
             else if (node.op == RegionOp::Float) values[node.id] = *node.floating;
-            else if (node.op == RegionOp::Alias) values[node.id] = values.at(node.dependencies.at(0));
+            else if (node.op == RegionOp::Alias) {
+                const auto* mapping = plan.value(node.id);
+                if (!mapping || mapping->materialized)
+                    values[node.id] = values.at(canonicalAlias(region, node.dependencies.at(0)));
+            }
             else if (node.op == RegionOp::TensorLiteral) {
                 std::vector<std::uint64_t> shape;
                 for (auto extent : node.shape.extents) {
@@ -678,36 +943,46 @@ struct NativeGpuPendingState {
                     std::vector<std::int64_t> host;
                     for (auto dependency : node.dependencies)
                         host.push_back(std::get<std::int64_t>(values.at(dependency)));
+                    auto hostTensor = storage::Tensor::materializeI64(shape, host);
                     values[node.id] = upload(driver, context, stream,
-                        storage::Tensor::materializeI64(shape, host), uploadStaging, evidence);
+                        hostTensor, uploadStaging, evidence,
+                        plannedAllocation(node.id, hostTensor.descriptor().storage.byteLength()));
                 } else {
                     std::vector<float> host;
                     for (auto dependency : node.dependencies)
                         host.push_back(std::get<float>(values.at(dependency)));
+                    auto hostTensor = storage::Tensor::materializeF32(shape, host);
                     values[node.id] = upload(driver, context, stream,
-                        storage::Tensor::materializeF32(shape, host), uploadStaging, evidence);
+                        hostTensor, uploadStaging, evidence,
+                        plannedAllocation(node.id, hostTensor.descriptor().storage.byteLength()));
                 }
-            } else if (node.op == RegionOp::Negate) {
-                const auto& input = std::get<DeviceTensor>(values.at(node.dependencies.at(0)));
+            } else if (node.op == RegionOp::Copy) {
+                const auto source = canonicalAlias(region, node.dependencies.at(0));
+                const auto& input = std::get<DeviceTensor>(values.at(source));
                 DeviceTensor outputTensor{input.dtype, input.shape,
-                    allocate(driver, context, bytes(input), evidence)};
+                    plannedAllocation(node.id, bytes(input))};
+                copyDevice(driver, context, stream, input, outputTensor, evidence);
+                values[node.id] = std::move(outputTensor);
+            } else if (node.op == RegionOp::Negate || node.op == RegionOp::Add ||
+                       node.op == RegionOp::Subtract || node.op == RegionOp::ElementMultiply) {
+                const auto* group = plan.groupFor(node.id);
+                if (!group || group->nodes.front() != node.id || !executedGroups.insert(group->id).second)
+                    continue;
+                const auto groupInputIds = groupInputs(region, *group);
+                if (groupInputIds.empty())
+                    fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+                         "fusion group has no runtime tensor input");
+                const auto& input = std::get<DeviceTensor>(values.at(groupInputIds.front()));
+                DeviceTensor outputTensor{input.dtype, input.shape,
+                    plannedAllocation(group->output, bytes(input))};
                 if (input.dtype == storage::DType::I64 && storage::checkedElementCount(input.shape) != 0)
                     ensureErrorBuffer();
-                launchUnary(driver, context, stream, module, input, outputTensor, errorAllocation, evidence);
-                values[node.id] = std::move(outputTensor);
-            } else if (node.op == RegionOp::Add || node.op == RegionOp::Subtract ||
-                       node.op == RegionOp::ElementMultiply) {
-                const auto& lhs = std::get<DeviceTensor>(values.at(node.dependencies.at(0)));
-                const auto& rhs = std::get<DeviceTensor>(values.at(node.dependencies.at(1)));
-                DeviceTensor outputTensor{lhs.dtype, lhs.shape,
-                    allocate(driver, context, bytes(lhs), evidence)};
-                if (lhs.dtype == storage::DType::I64 && storage::checkedElementCount(lhs.shape) != 0)
-                    ensureErrorBuffer();
-                launchBinary(driver, context, stream, module, node.op, lhs, rhs, outputTensor,
-                             errorAllocation, evidence);
-                values[node.id] = std::move(outputTensor);
+                launchGroup(driver, context, stream, module, region, *group, values,
+                            outputTensor, errorAllocation, evidence);
+                values[group->output] = std::move(outputTensor);
             } else if (node.op == RegionOp::Index) {
-                const auto& input = std::get<DeviceTensor>(values.at(node.dependencies.at(0)));
+                const auto& input = std::get<DeviceTensor>(
+                    values.at(canonicalAlias(region, node.dependencies.at(0))));
                 std::uint64_t linear = 0;
                 for (std::size_t axis = 0; axis < node.indices.size(); ++axis) {
                     const auto coordinate = std::get<std::int64_t>(values.at(node.indices[axis]));
@@ -785,8 +1060,10 @@ struct NativeGpuPendingState {
         finalized = true;
     }
 #else
-    NativeGpuPendingState(TensorRegion selectedRegion, std::vector<GpuValue> selectedInputs, int)
-        : region(std::move(selectedRegion)), inputs(std::move(selectedInputs)) {}
+    NativeGpuPendingState(TensorRegion selectedRegion, PhysicalPlan selectedPlan,
+                          std::vector<GpuValue> selectedInputs, int)
+        : region(std::move(selectedRegion)), plan(std::move(selectedPlan)),
+          inputs(std::move(selectedInputs)) {}
 #endif
 };
 
@@ -819,6 +1096,19 @@ std::string emitNativeGpuPtx() {
 #if THIRAN_ENABLE_NATIVE_GPU
     return ptx();
 #else
+    return {};
+#endif
+}
+
+std::string emitNativeGpuPtx(const TensorRegion& region, PhysicalPlanOptions options) {
+#if THIRAN_ENABLE_NATIVE_GPU
+    auto planned = buildPhysicalPlan(region, PhysicalDevice::Gpu, options);
+    if (!planned.ok())
+        throw std::invalid_argument(planned.errors.empty() ? "GPU-INVALID-PLAN" : planned.errors.front());
+    return plannedPtx(region, *planned.plan);
+#else
+    (void)region;
+    (void)options;
     return {};
 #endif
 }
@@ -894,13 +1184,18 @@ GpuExecutionResult PendingGpuExecution::observe() noexcept {
 
 GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
                                         const std::vector<GpuValue>& inputs,
-                                        int device) noexcept {
+                                        int device,
+                                        PhysicalPlanOptions options) noexcept {
     GpuAsyncSubmission result;
     result.evidence.device.backendBuilt = nativeGpuBackendBuilt();
 #if THIRAN_ENABLE_NATIVE_GPU
     try {
         preflight(region, inputs);
-        auto state = std::make_shared<NativeGpuPendingState>(region, inputs, device);
+        auto planned = buildPhysicalPlan(region, PhysicalDevice::Gpu, options);
+        if (!planned.ok())
+            fail(GpuErrorCategory::BackendUnsupported, "GPU-INVALID-PLAN",
+                 planned.errors.empty() ? "physical planning failed" : planned.errors.front());
+        auto state = std::make_shared<NativeGpuPendingState>(region, std::move(*planned.plan), inputs, device);
         std::vector<runtime::AsyncResourceAccess> accesses;
         for (const auto& input : inputs)
             if (const auto* tensor = std::get_if<storage::Tensor>(&input))
@@ -944,14 +1239,26 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
                                         "cuEventSynchronize");
                     ++state->evidence.synchronizations;
                 }
-                if (state->failure) return asyncError(*state->failure);
+                if (state->failure) {
+                    auto error = asyncError(*state->failure);
+                    state->releaseDeviceStorage();
+                    return error;
+                }
                 state->finalizeValue();
+                state->releaseDeviceStorage();
                 return {};
-            } catch (const Failure& failure) { state->failure = failure.error(); }
-            catch (const std::exception& error) { state->failure = gpuInternal(error); }
+            } catch (const Failure& failure) {
+                state->failure = failure.error();
+                state->releaseDeviceStorage();
+            }
+            catch (const std::exception& error) {
+                state->failure = gpuInternal(error);
+                state->releaseDeviceStorage();
+            }
             catch (...) {
                 state->failure = GpuError{GpuErrorCategory::RuntimeFailure, "GPU-INTERNAL",
                                           "unknown native GPU observation failure"};
+                state->releaseDeviceStorage();
             }
             return asyncError(*state->failure);
         };
@@ -963,9 +1270,20 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
                                         "cuStreamSynchronize(abort)");
                     ++state->evidence.synchronizations;
                 }
+                state->releaseDeviceStorage();
                 return {};
-            } catch (const Failure& failure) { return asyncError(failure.error()); }
-            catch (const std::exception& error) { return asyncError(gpuInternal(error)); }
+            } catch (const Failure& failure) {
+                state->releaseDeviceStorage();
+                return asyncError(failure.error());
+            }
+            catch (const std::exception& error) {
+                state->releaseDeviceStorage();
+                return asyncError(gpuInternal(error));
+            }
+            catch (...) {
+                state->releaseDeviceStorage();
+                return runtime::AsyncError{"GPU-INTERNAL", "unknown native GPU abort failure"};
+            }
         };
 
         auto submitted = runtime::submitAsyncOperation(std::move(accesses), {}, std::move(callbacks));
@@ -991,6 +1309,7 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
     (void)region;
     (void)inputs;
     (void)device;
+    (void)options;
     result.error = GpuError{GpuErrorCategory::BackendUnavailable, "GPU-BACKEND-NOT-BUILT",
                             "native GPU backend was disabled at build time"};
 #endif
@@ -999,8 +1318,9 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion& region,
 
 GpuExecutionResult executeNativeGpu(const TensorRegion& region,
                                     const std::vector<GpuValue>& inputs,
-                                    int device) noexcept {
-    auto submitted = submitNativeGpuAsync(region, inputs, device);
+                                    int device,
+                                    PhysicalPlanOptions options) noexcept {
+    auto submitted = submitNativeGpuAsync(region, inputs, device, options);
     if (!submitted.ok()) return {{}, submitted.error, submitted.evidence};
     return submitted.pending->observe();
 }

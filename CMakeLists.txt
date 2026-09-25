@@ -102,11 +102,14 @@ target_link_libraries(thiran_v0_storage PUBLIC thiran_v0_analysis thiran_v0_asyn
 add_library(thiran_v0_tensor_region STATIC src/backend/v0/TensorRegion.cpp)
 target_link_libraries(thiran_v0_tensor_region PUBLIC thiran_v0_storage)
 
+add_library(thiran_v0_physical_plan STATIC src/backend/v0/PhysicalPlan.cpp)
+target_link_libraries(thiran_v0_physical_plan PUBLIC thiran_v0_tensor_region)
+
 add_library(thiran_v0_native_cpu STATIC src/backend/v0/NativeCpu.cpp)
-target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_tensor_region)
+target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_physical_plan)
 
 add_library(thiran_v0_native_gpu STATIC src/backend/v0/NativeGpu.cpp)
-target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_tensor_region PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_physical_plan PRIVATE ${CMAKE_DL_LIBS})
 target_compile_definitions(thiran_v0_native_gpu PRIVATE
     THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
 
@@ -182,6 +185,10 @@ if(BUILD_TESTING)
         TH008_INCLUDE="${CMAKE_SOURCE_DIR}/include"
         TH008_BUILD="${CMAKE_BINARY_DIR}")
     add_test(NAME V0NativeCpuTests COMMAND v0_native_cpu_tests)
+
+    add_executable(v0_physical_plan_tests tests/backend/v0/PhysicalPlanTests.cpp)
+    target_link_libraries(v0_physical_plan_tests PRIVATE thiran_v0_physical_plan thiran_v0_autodiff)
+    add_test(NAME V0PhysicalPlanTests COMMAND v0_physical_plan_tests)
 
     add_executable(v0_native_gpu_tests tests/backend/v0/NativeGpuTests.cpp)
     target_link_libraries(v0_native_gpu_tests PRIVATE thiran_v0_native_gpu)

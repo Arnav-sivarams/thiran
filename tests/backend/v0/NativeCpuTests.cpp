@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <utility>
 
 namespace fs=std::filesystem;
 using namespace thiran::v0;
@@ -92,7 +93,7 @@ int main() {
         "  catch (const SemanticFailure& e) { std::cout << e.id << '\\n'; return 0; }\n}\n";
     auto np=compileRun(b::emitCpp20(*rp.region,false,wrapper),dir,"pick_dynamic");
     require(np.exit==0&&np.output=="3\nTH-SPEC-BOUNDS\n","N06/N07 runtime bounds mismatch: "+np.output+np.error);
-    s::RuntimeValue x; x.data=s::RuntimeTensor{s::TypeKind::I64,{2,2},{1,2,3,4}};
+    s::RuntimeValue x; x.data=s::RuntimeTensor{s::TypeKind::I64,{2,2},{1,2,3,4},{}};
     s::RuntimeValue good; good.data=std::int64_t{1};
     s::RuntimeValue bad; bad.data=std::int64_t{2};
     require(s::evaluateCall(mp,"pick",{x,good}).format()=="{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":3}",
@@ -106,8 +107,8 @@ int main() {
         " try { (void)native_f1(x,y); return 3; } catch (const SemanticFailure& e) { std::cout<<e.id<<'\\n'; return 0; }\n}\n";
     auto no=compileRun(b::emitCpp20(*ro.region,false,overflowWrapper),dir,"overflow_dynamic");
     require(no.exit==0&&no.output=="TH-SPEC-I64-OVERFLOW\n","N08 runtime overflow mismatch: "+no.output+no.error);
-    s::RuntimeValue maxTensor; maxTensor.data=s::RuntimeTensor{s::TypeKind::I64,{1,1},{9223372036854775807LL}};
-    s::RuntimeValue oneTensor; oneTensor.data=s::RuntimeTensor{s::TypeKind::I64,{1,1},{1}};
+    s::RuntimeValue maxTensor; maxTensor.data=s::RuntimeTensor{s::TypeKind::I64,{1,1},{9223372036854775807LL},{}};
+    s::RuntimeValue oneTensor; oneTensor.data=s::RuntimeTensor{s::TypeKind::I64,{1,1},{1},{}};
     require(s::evaluateCall(mo,"add",{maxTensor,oneTensor}).format()=="{\"status\":\"error\",\"error_id\":\"TH-SPEC-I64-OVERFLOW\"}",
         "N08 reference dynamic overflow mismatch");
     auto broadcast=source("fn main() -> Tensor<i64,2> {\nlet A=[1,2;3,4]\nlet B=[5,6]\nreturn A + B\n}");
@@ -124,11 +125,82 @@ int main() {
     auto cf=source("fn main() -> i64 {\nif true { return 1 } else { return 2 }\n}");
     auto rcf=extract(cf); require(!rcf.ok()&&rcf.diagnostic.find("BACKEND-UNSUPPORTED")!=std::string::npos,
         "N14 structured control not strict-native unsupported");
+    const std::string fusedSource=
+        "fn f(x:Tensor<i64,1>,y:Tensor<i64,1>,c:Tensor<i64,1>,d:Tensor<i64,1>)->Tensor<i64,1>{\n"
+        "let t1=x+y\nlet t2=t1.*c\nlet t3=t2-d\nreturn t3+y\n}";
+    auto mfused=source(fusedSource); auto rfused=extract(mfused,"f",false);
+    require(rfused.ok(),"TH015 CPU fused extraction failed: "+rfused.diagnostic);
+    auto fusedPlan=b::buildPhysicalPlan(*rfused.region,b::PhysicalDevice::Host);
+    auto conservativePlan=b::buildPhysicalPlan(*rfused.region,b::PhysicalDevice::Host,{true,false});
+    require(fusedPlan.ok()&&conservativePlan.ok(),"TH015 CPU planning failed");
+    require(fusedPlan.plan->fusionGroups.size()==1&&fusedPlan.plan->fusionGroups[0].nodes.size()==4,
+        "TH015 CPU chain did not form one fusion group");
+    std::size_t logicalTemps=0,physicalTemps=0;
+    for(const auto& value:conservativePlan.plan->values)
+        logicalTemps+=value.classification==b::PhysicalValueClass::Temporary&&value.value==value.root;
+    for(const auto& slot:conservativePlan.plan->slots) physicalTemps+=slot.reusable&&!slot.external;
+    require(logicalTemps==3&&physicalTemps==2,
+        "TH015 CPU conservative plan did not reuse one non-overlapping temp slot");
+    const std::string fusedWrapper=
+        "int main(){Tensor x=Tensor::materializeI64({2},{1,2});Tensor y=Tensor::materializeI64({2},{3,4});"
+        "Tensor c=Tensor::materializeI64({2},{2,2});Tensor d=Tensor::materializeI64({2},{1,1});"
+        "try{auto r=native_f1(x,y,c,d);auto z=r.logicalI64Values();if(z!=std::vector<std::int64_t>{10,15})return 4;"
+        "std::cout<<\"ok\\n\";return 0;}catch(...){return 5;}}\n";
+    const auto fusedCpp=b::emitCpp20(*rfused.region,false,fusedWrapper);
+    const auto unfusedCpp=b::emitCpp20(*rfused.region,false,fusedWrapper,{true,false});
+    require(fusedCpp.find("fusion_groups=1")!=std::string::npos&&
+        std::count(fusedCpp.begin(),fusedCpp.end(),'\n')<std::count(unfusedCpp.begin(),unfusedCpp.end(),'\n'),
+        "TH015 CPU emission did not consume the fusion plan");
+    auto fusedRun=compileRun(fusedCpp,dir,"th015_fused");
+    auto unfusedRun=compileRun(unfusedCpp,dir,"th015_unfused");
+    require(fusedRun.exit==0&&unfusedRun.exit==0&&fusedRun.output=="ok\n"&&fusedRun.output==unfusedRun.output,
+        "TH015 CPU enabled/disabled execution mismatch: "+fusedRun.error+unfusedRun.error);
+
+    const std::string overflowFusedWrapper=
+        "int main(){Tensor x=Tensor::materializeI64({1},{std::numeric_limits<std::int64_t>::max()});"
+        "Tensor y=Tensor::materializeI64({1},{1});Tensor c=Tensor::materializeI64({1},{0});"
+        "Tensor d=Tensor::materializeI64({1},{0});try{(void)native_f1(x,y,c,d);return 3;}"
+        "catch(const SemanticFailure&e){std::cout<<e.id<<'\\n';return 0;}}\n";
+    auto fusedOverflow=compileRun(b::emitCpp20(*rfused.region,false,overflowFusedWrapper),dir,"th015_fused_overflow");
+    require(fusedOverflow.exit==0&&fusedOverflow.output=="TH-SPEC-I64-OVERFLOW\n",
+        "fused intermediate i64 overflow did not preserve checked failure");
+
+    auto mf32=source(
+        "fn f(x:Tensor<f32,1>,y:Tensor<f32,1>,c:Tensor<f32,1>,d:Tensor<f32,1>)->Tensor<f32,1>{\n"
+        "let t1=x+y\nlet t2=t1.*c\nlet t3=t2-d\nreturn t3+y\n}");
+    auto rf32Native=extract(mf32,"f",false);
+    require(rf32Native.ok(),"TH015 f32 CPU extraction failed: "+rf32Native.diagnostic);
+    const std::string f32Wrapper=
+        "int main(){Tensor x=Tensor::materializeF32({2},{1,2});Tensor y=Tensor::materializeF32({2},{3,4});"
+        "Tensor c=Tensor::materializeF32({2},{2,2});Tensor d=Tensor::materializeF32({2},{1,1});"
+        "auto r=native_f1(x,y,c,d);if(r.logicalF32Values()!=std::vector<float>{10,15})return 4;"
+        "std::cout<<\"ok\\n\";return 0;}\n";
+    const auto f32FusedCpp=b::emitCpp20(*rf32Native.region,false,f32Wrapper);
+    const auto f32UnfusedCpp=b::emitCpp20(*rf32Native.region,false,f32Wrapper,{false,false});
+    require(f32FusedCpp.find("fast-math")==std::string::npos&&f32FusedCpp.find("fma(")==std::string::npos&&
+        f32FusedCpp.find("volatile float element_v")!=std::string::npos,
+        "f32 fusion introduced fast-math/contraction text");
+    auto f32Fused=compileRun(f32FusedCpp,dir,"th015_f32_fused");
+    auto f32Unfused=compileRun(f32UnfusedCpp,dir,"th015_f32_unfused");
+    require(f32Fused.exit==0&&f32Unfused.exit==0&&f32Fused.output=="ok\n"&&f32Fused.output==f32Unfused.output,
+        "f32 fused/unfused native CPU result mismatch");
+    s::RuntimeValue fx; fx.data=s::RuntimeTensor{s::TypeKind::F32,{2},{},{1,2}};
+    s::RuntimeValue fy; fy.data=s::RuntimeTensor{s::TypeKind::F32,{2},{},{3,4}};
+    s::RuntimeValue fc; fc.data=s::RuntimeTensor{s::TypeKind::F32,{2},{},{2,2}};
+    s::RuntimeValue fd; fd.data=s::RuntimeTensor{s::TypeKind::F32,{2},{},{1,1}};
+    auto f32Reference=s::evaluateCall(mf32,"f",{fx,fy,fc,fd});
+    require(f32Reference.ok&&f32Reference.value&&
+        std::get<s::RuntimeTensor>(f32Reference.value->data).f32Values==std::vector<float>({10,15}),
+        "f32 semantic reference disagreed with native fused result");
     // Independent manually malformed TensorRegions, not extractor-produced failures.
     b::TensorRegion base; base.function=1; base.name="manual"; base.outputType=s::tensor(s::scalar(s::TypeKind::I64),2);
     s::ShapeFact sh{{2,2}};
-    base.nodes={{1,b::RegionOp::Input,base.outputType,sh,{}},{2,b::RegionOp::Input,base.outputType,sh,{}},
-                {3,b::RegionOp::Add,base.outputType,sh,{}, {1,2}}}; base.inputs={1,2}; base.output=3;
+    auto manualNode=[&](s::ValueId id,b::RegionOp op,std::vector<s::ValueId> dependencies={}) {
+        b::RegionNode node; node.id=id; node.op=op; node.type=base.outputType; node.shape=sh;
+        node.dependencies=std::move(dependencies); return node;
+    };
+    base.nodes={manualNode(1,b::RegionOp::Input),manualNode(2,b::RegionOp::Input),
+                manualNode(3,b::RegionOp::Add,{1,2})}; base.inputs={1,2}; base.output=3;
     require(b::verifyRegion(base).ok(),"manual base invalid");
     auto negative=[&](const b::TensorRegion& r,const std::string& id) {
         auto v=b::verifyRegion(r); bool found=false; for(auto& e:v.errors) found|=e.find(id)!=std::string::npos;

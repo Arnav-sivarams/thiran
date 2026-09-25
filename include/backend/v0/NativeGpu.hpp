@@ -1,6 +1,6 @@
 #pragma once
 
-#include "backend/v0/TensorRegion.hpp"
+#include "backend/v0/PhysicalPlan.hpp"
 #include "runtime/v0/Async.hpp"
 #include "storage/v0/Storage.hpp"
 
@@ -66,6 +66,16 @@ struct GpuExecutionEvidence {
     std::uint64_t observations = 0;
     std::uint64_t droppedDrains = 0;
     std::uint64_t releasedReservations = 0;
+    std::uint64_t logicalTensorValues = 0;
+    std::uint64_t logicalIntermediates = 0;
+    std::uint64_t materializedIntermediates = 0;
+    std::uint64_t physicalSlots = 0;
+    std::uint64_t physicalTemporarySlots = 0;
+    std::uint64_t reusedSlotAssignments = 0;
+    std::uint64_t fusionGroups = 0;
+    std::uint64_t fusedKernelGroups = 0;
+    std::uint64_t plannerOwnedAllocations = 0;
+    std::uint64_t retainedPlannerAllocations = 0;
 };
 
 struct GpuExecutionResult {
@@ -80,6 +90,7 @@ analysis::EffectSet nativeGpuAsyncEffects() noexcept;
 // Deterministic backend artifact for compiler tests and diagnostics. Empty
 // when the native GPU implementation was disabled at build time.
 std::string emitNativeGpuPtx();
+std::string emitNativeGpuPtx(const TensorRegion&, PhysicalPlanOptions = {});
 GpuDeviceInfo probeNativeGpu(int device = 0) noexcept;
 
 struct NativeGpuPendingState;
@@ -108,7 +119,8 @@ private:
     friend struct GpuAsyncSubmission;
     friend GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion&,
                                                     const std::vector<GpuValue>&,
-                                                    int) noexcept;
+                                                    int,
+                                                    PhysicalPlanOptions) noexcept;
 };
 
 struct GpuAsyncSubmission {
@@ -120,7 +132,8 @@ struct GpuAsyncSubmission {
 
 GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion&,
                                         const std::vector<GpuValue>& inputs = {},
-                                        int device = 0) noexcept;
+                                        int device = 0,
+                                        PhysicalPlanOptions options = {}) noexcept;
 
 // Synchronous native execution. Inputs cross an explicit host-to-device
 // boundary and the result crosses an explicit device-to-host boundary before
@@ -128,6 +141,7 @@ GpuAsyncSubmission submitNativeGpuAsync(const TensorRegion&,
 // there is no evaluator, native-CPU, framework, or retry fallback.
 GpuExecutionResult executeNativeGpu(const TensorRegion&,
                                     const std::vector<GpuValue>& inputs = {},
-                                    int device = 0) noexcept;
+                                    int device = 0,
+                                    PhysicalPlanOptions options = {}) noexcept;
 
 }

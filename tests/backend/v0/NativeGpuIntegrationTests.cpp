@@ -67,7 +67,7 @@ int main() {
 
         const auto floatModule = compile(
             "fn f(A:Tensor<f32,1>,B:Tensor<f32,1>) -> Tensor<f32,1> {\n"
-            "let C=A+B\nlet D=C.*B\nreturn D-A\n}");
+            "let C=A+B\nlet D=C.*B\nlet E=D-A\nreturn E+B\n}");
         const auto floatRegion = region(floatModule, "f", false);
         auto floatA = storage::Tensor::materializeF32({5}, {1.0f, 2.0f, 0.0f, 3.5f, 7.0f});
         const auto floatB = storage::Tensor::materializeF32({5}, {2.0f, 4.0f, 3.0f, 0.5f, 1.0f});
@@ -78,7 +78,13 @@ int main() {
                 floatSubmission.evidence.activeReadReservations == 2 &&
                 floatSubmission.evidence.activeWriteReservations == 1 &&
                 floatSubmission.evidence.eventRecords == 1 &&
-                floatSubmission.evidence.kernelLaunches == 3 &&
+                floatSubmission.evidence.kernelLaunches == 1 &&
+                floatSubmission.evidence.fusionGroups == 1 &&
+                floatSubmission.evidence.fusedKernelGroups == 1 &&
+                floatSubmission.evidence.logicalIntermediates == 3 &&
+                floatSubmission.evidence.materializedIntermediates == 0 &&
+                floatSubmission.evidence.plannerOwnedAllocations == 1 &&
+                floatSubmission.evidence.retainedPlannerAllocations == 1 &&
                 floatSubmission.evidence.synchronizations == 0,
                 "f32 submission/completion evidence was not separated");
         require(!floatSubmission.pending->value().has_value(),
@@ -104,18 +110,31 @@ int main() {
         require(floatReference.ok && floatReference.value, "f32 semantic reference failed");
         const auto& floatExpected = std::get<semantic::RuntimeTensor>(floatReference.value->data).f32Values;
         same(floatTensor.logicalF32Values(), floatExpected);
-        require(floatRun.evidence.kernelLaunches == 3 && floatRun.evidence.synchronizations == 1 &&
+        require(floatRun.evidence.kernelLaunches == 1 && floatRun.evidence.synchronizations == 1 &&
                 floatRun.evidence.observations == 1 && floatRun.evidence.pendingOperations == 0 &&
                 floatRun.evidence.activeReadReservations == 0 &&
                 floatRun.evidence.activeWriteReservations == 0 &&
-                floatRun.evidence.releasedReservations == 3,
-                "multi-kernel observation/reservation evidence mismatch");
+                floatRun.evidence.releasedReservations == 3 &&
+                floatRun.evidence.retainedPlannerAllocations == 0,
+                "fused observation/reservation/planner evidence mismatch");
         require(floatRun.evidence.hostToDeviceCopies == 2 && floatRun.evidence.deviceToHostCopies == 1,
                 "literal transfer evidence mismatch");
         require(floatSubmission.pending->value().has_value() &&
                 floatSubmission.pending->observe().ok() &&
                 floatSubmission.pending->evidence().synchronizations == 1,
                 "completed value/double observation contract failed");
+        const auto floatUnfused = backend::executeNativeGpu(
+            floatRegion, {floatA, floatB}, 0, {true, false});
+        require(floatUnfused.ok(), floatUnfused.error ? floatUnfused.error->message :
+                "optimization-disabled f32 GPU run failed");
+        same(std::get<storage::Tensor>(*floatUnfused.value).logicalF32Values(), floatExpected);
+        require(floatUnfused.evidence.kernelLaunches == 4 &&
+                floatUnfused.evidence.fusionGroups == 4 &&
+                floatUnfused.evidence.plannerOwnedAllocations == 3 &&
+                floatUnfused.evidence.physicalTemporarySlots == 2 &&
+                floatUnfused.evidence.reusedSlotAssignments == 1 &&
+                floatUnfused.evidence.retainedPlannerAllocations == 0,
+                "GPU optimization-enabled/disabled structural evidence mismatch");
 
         const auto dynamicModule = compile(
             "fn f(x: Tensor<i64,1>, y: Tensor<i64,1>) -> Tensor<i64,1> {\n"
@@ -143,6 +162,17 @@ int main() {
                 std::get<storage::Tensor>(*dynamicRun.value).storageId() != host.storageId(),
                 "GPU execution introduced hidden copy-on-write or mutated input");
 
+        const auto copyModule = compile(
+            "fn copied(x:Tensor<i64,1>,y:Tensor<i64,1>)->Tensor<i64,1>{let z=copy(x)\nreturn z+y}");
+        const auto copyRegion = region(copyModule, "copied", false);
+        auto copyInput = storage::Tensor::materializeI64({257}, std::vector<std::int64_t>(257, 4));
+        const auto copyRun = backend::executeNativeGpu(copyRegion, {host, copyInput});
+        require(copyRun.ok() && copyRun.evidence.deviceToDeviceCopies == 1 &&
+                copyRun.evidence.kernelLaunches == 1 &&
+                copyRun.evidence.plannerOwnedAllocations == 2 &&
+                std::get<storage::Tensor>(*copyRun.value).logicalI64Values().front() == 7,
+                "explicit Copy did not execute through an independent planned device root");
+
         const auto aliasModule = compile(
             "fn identity(x:Tensor<i64,1>)->Tensor<i64,1>{let y=x\nreturn y}");
         const auto aliasRegion = region(aliasModule, "identity", false);
@@ -164,7 +194,9 @@ int main() {
         auto pendingA = backend::submitNativeGpuAsync(dynamicRegion, {host, host});
         auto pendingB = backend::submitNativeGpuAsync(dynamicRegion, {independentHost, independentHost});
         require(pendingA.ok() && pendingB.ok() && host.asyncResource().activeReads() == 1 &&
-                independentHost.asyncResource().activeReads() == 1,
+                independentHost.asyncResource().activeReads() == 1 &&
+                pendingA.evidence.retainedPlannerAllocations == 1 &&
+                pendingB.evidence.retainedPlannerAllocations == 1,
                 "independent async operations did not remain separately pending");
         const auto observedA = pendingA.pending->observe();
         require(observedA.ok() && host.asyncResource().activeReads() == 0 &&
@@ -205,7 +237,8 @@ int main() {
             {1}, {std::numeric_limits<std::int64_t>::max()});
         const auto one = storage::Tensor::materializeI64({1}, {1});
         const auto overflowRun = backend::executeNativeGpu(dynamicRegion, {overflowHost, one});
-        require(!overflowRun.ok() && overflowRun.error && overflowRun.error->code == "TH-SPEC-I64-OVERFLOW",
+        require(!overflowRun.ok() && overflowRun.error && overflowRun.error->code == "TH-SPEC-I64-OVERFLOW" &&
+                overflowRun.evidence.retainedPlannerAllocations == 0,
                 "GPU checked i64 overflow did not propagate");
 
         (void)runtime::takeUnobservedAsyncErrors();
@@ -247,6 +280,10 @@ int main() {
                   << " stream_submissions=" << floatRun.evidence.streamSubmissions
                   << " event_records=" << floatRun.evidence.eventRecords
                   << " kernels=" << floatRun.evidence.kernelLaunches
+                  << " fusion_groups=" << floatRun.evidence.fusionGroups
+                  << " logical_intermediates=" << floatRun.evidence.logicalIntermediates
+                  << " physical_temp_slots=" << floatRun.evidence.physicalTemporarySlots
+                  << " planner_allocations=" << floatRun.evidence.plannerOwnedAllocations
                   << " observations=" << floatRun.evidence.observations
                   << " synchronizations=" << floatRun.evidence.synchronizations
                   << " released_reservations=" << floatRun.evidence.releasedReservations << '\n'

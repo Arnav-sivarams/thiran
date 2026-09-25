@@ -17,6 +17,7 @@ std::string opName(RegionOp op) {
     case RegionOp::Float: return "Float";
     case RegionOp::TensorLiteral: return "TensorLiteral";
     case RegionOp::Alias: return "Alias";
+    case RegionOp::Copy: return "Copy";
     case RegionOp::Negate: return "Negate";
     case RegionOp::Add: return "Add";
     case RegionOp::Subtract: return "Subtract";
@@ -44,16 +45,12 @@ bool tensorNumeric(const semantic::Type& t) {
            scalarNumeric(t.elements[0]) && (t.rank == 1 || t.rank == 2);
 }
 
-bool tensorI64(const semantic::Type& t) {
-    return tensorNumeric(t) && scalarI64(t.elements[0]);
-}
-
 bool gpuType(const semantic::Type& t) {
     return scalarNumeric(t) || tensorNumeric(t);
 }
 
 bool cpuType(const semantic::Type& t) {
-    return scalarI64(t) || tensorI64(t);
+    return gpuType(t);
 }
 
 bool shapeKnown(const semantic::ShapeFact& shape) {
@@ -176,6 +173,11 @@ RegionVerification verifyRegion(const TensorRegion& region) {
         } else if (node.op == RegionOp::Alias &&
                    (node.dependencies.size() != 1 || !dependency(0) || dependency(0)->type != node.type)) {
             result.errors.push_back("TRV10 malformed alias");
+        } else if (node.op == RegionOp::Copy) {
+            const auto* source = dependency(0);
+            if (node.dependencies.size() != 1 || !source || !tensorNumeric(node.type) ||
+                source->type != node.type || knownMismatch(source->shape, node.shape))
+                result.errors.push_back("TRV10 malformed Copy");
         } else if (node.op == RegionOp::Integer && (!scalarI64(node.type) || !node.integer)) {
             result.errors.push_back("TRV10 malformed integer");
         } else if (node.op == RegionOp::Float && (!scalarF32(node.type) || !node.floating)) {
@@ -257,6 +259,15 @@ NativeResult extractStrictRegion(const semantic::Module& module,
     region.outputType = function->result;
     std::map<semantic::BindingId, semantic::ValueId> bindings;
     std::map<semantic::ValueId, std::vector<semantic::Check>> pending;
+    const auto provenance = facts.valueProvenance.find(function->id);
+    auto attachOwnership = [&](RegionNode& node) {
+        if (provenance == facts.valueProvenance.end()) return;
+        const auto found = provenance->second.find(node.id);
+        if (found == provenance->second.end()) return;
+        node.provenance = found->second.kind;
+        node.resources = found->second.resources;
+        node.viewRoots = found->second.viewRoots;
+    };
 
     for (const auto& parameter : function->parameters) {
         if (parameter.access != semantic::AccessMode::Read || !acceptedType(parameter.type))
@@ -267,6 +278,7 @@ NativeResult extractStrictRegion(const semantic::Module& module,
         input.type = parameter.type;
         input.shape = parameter.shape;
         input.span = parameter.span;
+        attachOwnership(input);
         region.nodes.push_back(std::move(input));
         region.inputs.push_back(parameter.id);
         bindings[parameter.binding] = parameter.id;
@@ -307,7 +319,6 @@ NativeResult extractStrictRegion(const semantic::Module& module,
             pending.erase(node.dependencies[0]);
         };
         auto admitElementwise = [&](RegionOp op, std::string_view operation) -> bool {
-            if (target == NativeTarget::Cpu && (op != RegionOp::Add || !tensorI64(instruction.type))) return false;
             if (!tensorNumeric(instruction.type) || instruction.operands.size() != 2) return false;
             node.op = op;
             for (const auto& lhs : region.nodes)
@@ -326,13 +337,10 @@ NativeResult extractStrictRegion(const semantic::Module& module,
             node.integer = instruction.integer;
             break;
         case semantic::Op::Float:
-            if (target == NativeTarget::Cpu) return fail("f32 lowering deferred", "Float");
             node.op = RegionOp::Float;
             node.floating = instruction.floating;
             break;
         case semantic::Op::TensorLiteral:
-            if (target == NativeTarget::Cpu && !tensorI64(instruction.type))
-                return fail("f32 lowering deferred", "TensorLiteral");
             node.op = RegionOp::TensorLiteral;
             break;
         case semantic::Op::LoadBinding:
@@ -340,8 +348,13 @@ NativeResult extractStrictRegion(const semantic::Module& module,
             node.op = RegionOp::Alias;
             node.dependencies = {bindings.at(instruction.binding)};
             break;
+        case semantic::Op::Copy:
+            if (!tensorNumeric(instruction.type) || instruction.operands.size() != 1)
+                return fail("Copy not in native tensor subset", "Copy");
+            node.op = RegionOp::Copy;
+            break;
         case semantic::Op::Negate:
-            if (target == NativeTarget::Cpu || !tensorNumeric(instruction.type) || instruction.operands.size() != 1)
+            if (!tensorNumeric(instruction.type) || instruction.operands.size() != 1)
                 return fail("tensor Negate not in native subset", "Negate");
             node.op = RegionOp::Negate;
             break;
@@ -365,8 +378,6 @@ NativeResult extractStrictRegion(const semantic::Module& module,
             if (!input || !tensorNumeric(input->type) || instruction.type != input->type.elements[0] ||
                 instruction.operands.size() != 1 || instruction.selectors.size() != input->type.rank)
                 return fail("partial/slice Index", "Index");
-            if (target == NativeTarget::Cpu && !scalarI64(instruction.type))
-                return fail("f32 Index lowering deferred", "Index");
             node.op = RegionOp::Index;
             for (const auto& selector : instruction.selectors) {
                 if (selector.slice || !selector.index) return fail("slice Index", "Index");
@@ -387,6 +398,7 @@ NativeResult extractStrictRegion(const semantic::Module& module,
         default:
             return fail("operation " + std::to_string(static_cast<int>(instruction.op)), "Unsupported");
         }
+        attachOwnership(node);
         region.nodes.push_back(std::move(node));
         out.coverage += opName(region.nodes.back().op) + ' ' + backendName + '\n';
     }

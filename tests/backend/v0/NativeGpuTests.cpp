@@ -3,6 +3,7 @@
 #include "semantic/v0/Analyzer.hpp"
 #include "semantic/v0/Verifier.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -54,13 +55,26 @@ int main() {
             "let C=A+B\nreturn -(C.*B)\n}");
         const auto index = compile(
             "fn pick(x: Tensor<i64,2>, i: i64) -> i64 { return x[i,1] }");
+        const auto copied = compile(
+            "fn copied(x:Tensor<i64,1>,y:Tensor<i64,1>)->Tensor<i64,1>{let z=copy(x)\nreturn z+y}");
 
         const auto integerRegion = extract(integer);
         const auto floatingRegion = extract(floating, "f", false);
         const auto indexRegion = extract(index, "pick", false);
+        const auto copyRegion = extract(copied, "copied", false);
         require(integerRegion.ok(), "i64 GPU extraction failed: " + integerRegion.diagnostic);
         require(floatingRegion.ok(), "f32 GPU extraction failed: " + floatingRegion.diagnostic);
         require(indexRegion.ok(), "i64 Index GPU extraction failed: " + indexRegion.diagnostic);
+        require(copyRegion.ok() && copyRegion.coverage.find("Copy native-gpu") != std::string::npos,
+                "explicit Copy GPU extraction failed: " + copyRegion.diagnostic);
+        const auto copiedPlan = backend::buildPhysicalPlan(*copyRegion.region,
+            backend::PhysicalDevice::Gpu);
+        require(copiedPlan.ok(), "explicit Copy GPU planning failed");
+        const auto copyNode = std::find_if(copyRegion.region->nodes.begin(), copyRegion.region->nodes.end(),
+            [](const backend::RegionNode& node) { return node.op == backend::RegionOp::Copy; });
+        require(copyNode != copyRegion.region->nodes.end() && copiedPlan.plan->value(copyNode->id) &&
+                copiedPlan.plan->value(copyNode->id)->root == copyNode->id,
+                "explicit Copy did not retain an independent physical root");
         require(integerRegion.coverage.find("Add native-gpu") != std::string::npos &&
                 integerRegion.coverage.find("ElementMultiply native-gpu") != std::string::npos &&
                 integerRegion.coverage.find("Subtract native-gpu") != std::string::npos &&
@@ -119,6 +133,19 @@ int main() {
         catch (const std::runtime_error& error) { overflow = std::string(error.what()) == "TH007-SIZE-OVERFLOW"; }
         require(overflow, "byte-count overflow was not rejected");
 
+        const auto gpuPlan = backend::buildPhysicalPlan(*integerRegion.region,
+            backend::PhysicalDevice::Gpu);
+        const auto gpuConservative = backend::buildPhysicalPlan(*integerRegion.region,
+            backend::PhysicalDevice::Gpu, {true, false});
+        require(gpuPlan.ok() && gpuConservative.ok(), "GPU physical planning failed");
+        require(gpuPlan.plan->fusionGroups.size() == 1 &&
+                gpuPlan.plan->fusionGroups.front().nodes.size() == 3 &&
+                gpuConservative.plan->fusionGroups.size() == 3,
+                "GPU fusion enabled/disabled group structure is wrong");
+        require(gpuPlan.plan->dump() == backend::buildPhysicalPlan(*integerRegion.region,
+                    backend::PhysicalDevice::Gpu).plan->dump(),
+                "GPU physical plan dump is nondeterministic");
+
         const auto probe = backend::probeNativeGpu();
         require(probe.backendBuilt == backend::nativeGpuBackendBuilt(), "GPU build discovery mismatch");
         require((backend::nativeGpuAsyncEffects() &
@@ -135,6 +162,16 @@ int main() {
                     ptx.find("thiran_index_i64") != std::string::npos &&
                     ptx.find(".approx") == std::string::npos && ptx.find(".ftz") == std::string::npos,
                     "deterministic/default-numeric PTX module audit failed");
+            const auto plannedPtx = backend::emitNativeGpuPtx(*integerRegion.region);
+            const auto unfusedPtx = backend::emitNativeGpuPtx(*integerRegion.region, {true, false});
+            require(plannedPtx == backend::emitNativeGpuPtx(*integerRegion.region) &&
+                    plannedPtx.find("thiran_group_1_i64") != std::string::npos &&
+                    plannedPtx.find("add.s64") < plannedPtx.find("mul.lo.s64", plannedPtx.find("thiran_group_1_i64")) &&
+                    plannedPtx.find(".approx") == std::string::npos &&
+                    plannedPtx.find(".ftz") == std::string::npos,
+                    "fused checked/default-numeric PTX audit failed");
+            require(unfusedPtx.find("thiran_group_3_i64") != std::string::npos,
+                    "optimization-disabled PTX did not retain separate kernel groups");
             const auto arity = backend::executeNativeGpu(*indexRegion.region, {});
             require(!arity.ok() && arity.error && arity.error->code == "GPU-INPUT-ARITY" &&
                     arity.evidence.kernelLaunches == 0,
@@ -162,6 +199,8 @@ int main() {
         }
         if (!backend::nativeGpuBackendBuilt()) {
             require(backend::emitNativeGpuPtx().empty(), "disabled GPU build emitted a device module");
+            require(backend::emitNativeGpuPtx(*integerRegion.region).empty(),
+                    "disabled GPU build emitted a planned device module");
             require(probe.error && probe.error->code == "GPU-BACKEND-NOT-BUILT",
                     "disabled GPU backend did not report explicit unavailability");
             const auto execution = backend::executeNativeGpu(*integerRegion.region);
