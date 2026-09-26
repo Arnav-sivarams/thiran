@@ -5,6 +5,7 @@
 #include "semantic/v0/Verifier.hpp"
 
 #include <cmath>
+#include <bit>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -111,6 +112,27 @@ int main() {
         auto direct = backend::executeNativeGpu(floatRegion, {x, y});
         require(direct.ok(), direct.error ? direct.error->message : "direct GPU execution failed");
         same(std::get<storage::Tensor>(*direct.value).logicalF32Values(), aotValues);
+
+        const auto specialModule = compile(
+            "fn identity(x:Tensor<f32,1>)->Tensor<f32,1>{return x}");
+        const auto specialRegion = region(specialModule, "identity", false);
+        const std::vector<float> specials{
+            0.0f, -0.0f, std::numeric_limits<float>::min(),
+            std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max(),
+            std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()};
+        const auto specialInput = storage::Tensor::materializeF32({7}, specials);
+        const auto specialEntry = artifact::specializeEntry(specialRegion, {specialInput});
+        auto specialBuild = artifact::buildGpuAot(
+            specialRegion, {root / "f32-specials-gpu.tha", {}, specialEntry});
+        auto specialRun = specialBuild.success ? artifact::loadAndExecuteArtifact(
+            root / "f32-specials-gpu.tha", {specialInput}) : artifact::ArtifactExecutionResult{};
+        require(specialBuild.success && specialRun.ok(), "GPU f32-special identity failed");
+        const auto specialOutput = std::get<storage::Tensor>(*specialRun.value).logicalF32Values();
+        require(specialOutput.size() == specials.size(), "GPU f32-special output size changed");
+        for (std::size_t index = 0; index < specials.size(); ++index)
+            require(std::bit_cast<std::uint32_t>(specialOutput[index]) ==
+                    std::bit_cast<std::uint32_t>(specials[index]),
+                    "GPU f32-special identity changed bits");
 
         auto plan = backend::buildPhysicalPlan(floatRegion, backend::PhysicalDevice::Gpu);
         require(plan.ok(), "GPU artifact plan reconstruction failed");

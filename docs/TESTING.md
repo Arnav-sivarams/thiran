@@ -193,6 +193,39 @@ extension source through the production CLI, then physically executes the PTX
 artifacts after compilation (and after extension removal for the extension
 case), with kernel evidence and `fallback=NONE`.
 
+## TH-024 robustness qualification
+
+The short structural check is registered with ordinary test builds:
+
+```bash
+ctest --test-dir build/debug -R '^TH024StructureTests$' --output-on-failure
+```
+
+The machine campaign is intentionally separate from ordinary CI because it
+contains physical-GPU work, repeated builds, bounded stress, sanitizers, soaks,
+and a fresh copied-tree build. Its methodology is frozen in
+`docs/spec/ROBUSTNESS_REPRODUCIBILITY_V0.md`; completed phases are written
+atomically to `robustness/results/TH-024-machine.json`.
+
+```bash
+python3 robustness/th024/qualify.py --phase structural
+python3 robustness/th024/qualify.py --phase cpu
+python3 robustness/th024/qualify.py --phase gpu
+python3 robustness/th024/qualify.py --phase extension
+python3 robustness/th024/qualify.py --phase focused
+python3 robustness/th024/qualify.py --phase config
+python3 robustness/th024/qualify.py --phase sanitizers
+python3 robustness/th024/qualify.py --phase concurrency
+python3 robustness/th024/qualify.py --phase cpu-soak
+python3 robustness/th024/qualify.py --phase gpu-soak
+python3 robustness/th024/qualify.py --phase clean-copy
+```
+
+Each phase checks the frozen HEAD and TH-023 result hash before running. GPU
+phases require real CUDA device access; a skipped test is not physical-GPU
+evidence. The canonical counts and deterministic seeds must not be reduced to
+make a failure disappear.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

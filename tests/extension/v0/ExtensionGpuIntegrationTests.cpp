@@ -85,6 +85,25 @@ int main(int argc,char** argv){
     a::JitCompiler jit;auto j1=jit.compileGpu(region,{input});auto j2=jit.compileGpu(region,{input});
     require(j1.ok()&&j2.ok()&&!j1.cacheHit&&j2.cacheHit,"GPU extension JIT/cache failed");
     auto jitRun=j1.executable->execute({input});require(jitRun.ok()&&std::get<storage::Tensor>(*jitRun.value).logicalF32Values()==expected,"physical GPU JIT mismatch");
+    for(std::size_t caseIndex=0;caseIndex<100;++caseIndex){
+        std::vector<float> values;values.reserve(7);
+        for(std::size_t element=0;element<7;++element)
+            values.push_back(static_cast<float>((caseIndex*17+element*23)%129)-64.0f);
+        auto generated=storage::Tensor::materializeF32({7},values);
+        auto oracle=s::evaluateCall(module,"f",{runtimeTensor(generated)});
+        require(oracle.ok&&oracle.value,"generated extension reference failed");
+        const auto oracleValues=std::get<s::RuntimeTensor>(oracle.value->data).f32Values;
+        auto generatedCpu=a::loadAndExecuteArtifact(root/"comparison-cpu.tha",{generated});
+        auto generatedGpu=b::executeNativeGpu(region,{generated});
+        auto generatedAot=a::loadAndExecuteArtifact(root/"extension-gpu.tha",{generated});
+        auto generatedJit=j1.executable->execute({generated});
+        require(generatedCpu.ok()&&generatedGpu.ok()&&generatedAot.ok()&&generatedJit.ok()&&
+            std::get<storage::Tensor>(*generatedCpu.value).logicalF32Values()==oracleValues&&
+            std::get<storage::Tensor>(*generatedGpu.value).logicalF32Values()==oracleValues&&
+            std::get<storage::Tensor>(*generatedAot.value).logicalF32Values()==oracleValues&&
+            std::get<storage::Tensor>(*generatedJit.value).logicalF32Values()==oracleValues,
+            "generated reference/CPU/GPU/AOT/JIT extension differential mismatch");
+    }
     auto changed=region;for(auto& node:changed.nodes)if(node.extensionOperation){auto& op=*node.extensionOperation;op.semanticVersion="1.0.1";op.canonicalIdentity=op.extensionId+"::"+op.name+"@1.0.1/abi1";op.descriptorDigest=e::operationDigest(op);}
     auto j3=jit.compileGpu(changed,{input});require(j3.ok()&&!j3.cacheHit&&j3.executable->cacheKey()!=j1.executable->cacheKey(),"changed extension GPU JIT identity hit stale cache");
     auto changedRecipe=region;for(auto& node:changedRecipe.nodes)if(node.extensionOperation){auto& op=*node.extensionOperation;op.forward.nodes.back().opcode=e::ScalarOpcode::Subtract;op.descriptorDigest=e::operationDigest(op);}
@@ -113,7 +132,7 @@ int main(int argc,char** argv){
     std::cout<<"V0ExtensionGpuIntegrationTests PASS "<<checks<<" checks\n"
              <<"device="<<device.name<<"\ndriver_version="<<device.driverVersion<<"\ncompute_capability="
              <<device.computeMajor<<'.'<<device.computeMinor<<"\nreference_cpu_gpu=agree kernels="<<gpu.evidence.kernelLaunches
-             <<" aot_plugin_runtime_dependency=NONE fallback=NONE\n";
+             <<" differential_cases=100 aot_plugin_runtime_dependency=NONE fallback=NONE\n";
     fs::remove_all(root);return 0;
  }catch(const std::exception& failure){std::cerr<<"V0ExtensionGpuIntegrationTests FAIL after "<<checks<<" checks: "<<failure.what()<<'\n';fs::remove_all(root);return 1;}
 }

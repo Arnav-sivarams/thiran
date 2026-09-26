@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <cstdlib>
 #include <deque>
 #include <dlfcn.h>
 #include <limits>
@@ -107,6 +108,11 @@ void preflight(const TensorRegion& region, const std::vector<GpuValue>& inputs) 
 class Driver final {
 public:
     Driver() {
+#if THIRAN_TEST_FAILPOINTS
+        if (std::getenv("THIRAN_TEST_CUDA_DRIVER_UNAVAILABLE"))
+            fail(GpuErrorCategory::BackendUnavailable, "GPU-DRIVER-NOT-FOUND",
+                 "CUDA driver unavailable by deterministic test failpoint");
+#endif
         handle_ = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
         if (!handle_)
             fail(GpuErrorCategory::BackendUnavailable, "GPU-DRIVER-NOT-FOUND",

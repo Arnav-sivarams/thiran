@@ -1,9 +1,9 @@
 # Project status
 
-TH-022 provides a coherent built-repository terminal workflow across source
-checking, explicit native CPU/GPU execution, persistent artifacts, model
-deployment, and explicit TH-021 research extensions. It is not release or
-installer qualification.
+TH-024 qualifies the accepted V0 system under bounded deterministic repetition,
+corruption, controlled write failure, concurrency, resource churn, physical-GPU
+execution, and a clean copied-tree build. It is not a release decision,
+security proof, cross-machine claim, or cross-GPU portability claim.
 
 Status terms describe repository evidence, not intent.
 
@@ -30,6 +30,7 @@ Status terms describe repository evidence, not intent.
 | Training checkpoints | IMPLEMENTED (REFERENCE V0) | `.thc` schema/integrity validation, transactional save, exact destroy/reload/resume tests | TH-011 f32 state and local files only; no authentication | Preserve explicit schema and optimizer-state compatibility |
 | Model deployment | IMPLEMENTED (REFERENCE V0) | `.thm` bundle, `thiran-model`, relocated CPU and physical-GPU equivalence tests | Narrow affine public ABI; trusted local native payloads; no service | Generalize only from additional accepted models |
 | Numerical graphics | IMPLEMENTED (CPU + NATIVE GPU V0) | shared typed Tensor geometry/clipping, CPU reference, CUDA Driver/PTX pixel raster/depth/interpolation, deterministic cube, async/interoperability tests | Runtime/library API only; GPU outputs materialize through D2H and later GPU numerics H2D again; no zero-copy, scene graph, source syntax, artifact ABI, AD, or performance claim | Review the structured CPU/GPU boundary before broader graphics work |
+| Robustness / reproducibility | QUALIFIED (TH-024 V0 SCOPE) | frozen methodology, machine-readable evidence, deterministic CPU/physical-GPU repetition, corruption, transactional writes, concurrency, soaks, sanitizers, and clean-copy qualification | One local machine and one RTX 3050 Ti architecture; real GPU OOM, cross-machine, cross-GPU, LSan, and Compute Sanitizer are not qualified | Conduct TH-024 architectural review before any release decision |
 | Adaptation | RESEARCH HYPOTHESIS | Strategy and Region infrastructure only | No profiling or runtime switching | Establish measurable policy hypotheses |
 | Triton | PARTIAL | emitter/code-generator scaffolding | Not a working execution backend | Prove legal lowering and execution independently |
 | Distributed planning | PARTIAL | partition and communication structures in normal path | Descriptive; not Region runtime movement | Define executable semantics |

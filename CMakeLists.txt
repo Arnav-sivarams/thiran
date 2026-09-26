@@ -118,6 +118,8 @@ target_compile_definitions(thiran_v0_graphics PRIVATE
 
 add_library(thiran_v0_persistence STATIC src/persistence/v0/Persistence.cpp)
 target_link_libraries(thiran_v0_persistence PUBLIC thiran_v0_storage)
+target_compile_definitions(thiran_v0_persistence PRIVATE
+    THIRAN_TEST_FAILPOINTS=$<BOOL:${BUILD_TESTING}>)
 
 add_library(thiran_v0_checkpoint STATIC src/training/v0/Checkpoint.cpp)
 target_link_libraries(thiran_v0_checkpoint PUBLIC thiran_v0_training thiran_v0_persistence)
@@ -134,7 +136,8 @@ target_link_libraries(thiran_v0_native_cpu PUBLIC thiran_v0_physical_plan)
 add_library(thiran_v0_native_gpu STATIC src/backend/v0/NativeGpu.cpp)
 target_link_libraries(thiran_v0_native_gpu PUBLIC thiran_v0_physical_plan PRIVATE ${CMAKE_DL_LIBS})
 target_compile_definitions(thiran_v0_native_gpu PRIVATE
-    THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
+    THIRAN_ENABLE_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>
+    THIRAN_TEST_FAILPOINTS=$<BOOL:${BUILD_TESTING}>)
 target_link_libraries(thiran_v0_graphics PUBLIC thiran_v0_native_gpu)
 
 add_library(thiran_v0_process STATIC src/tooling/v0/Process.cpp)
@@ -142,6 +145,8 @@ add_library(thiran_v0_process STATIC src/tooling/v0/Process.cpp)
 add_library(thiran_v0_artifact STATIC src/artifact/v0/NativeArtifacts.cpp)
 target_link_libraries(thiran_v0_artifact PUBLIC
     thiran_v0_native_cpu thiran_v0_native_gpu thiran_v0_process PRIVATE ${CMAKE_DL_LIBS})
+target_compile_definitions(thiran_v0_artifact PRIVATE
+    THIRAN_TEST_FAILPOINTS=$<BOOL:${BUILD_TESTING}>)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # Keep build/JIT and execution code independently discardable so the
     # deployment-only model launcher does not retain host-compiler process code.
@@ -248,7 +253,7 @@ if(BUILD_TESTING)
     add_test(NAME V0AsyncLifetimeTests COMMAND v0_async_lifetime_tests)
 
     add_executable(v0_native_cpu_tests tests/backend/v0/NativeCpuTests.cpp)
-    target_link_libraries(v0_native_cpu_tests PRIVATE thiran_v0_native_cpu)
+    target_link_libraries(v0_native_cpu_tests PRIVATE thiran_v0_native_cpu thiran_v0_process)
     target_compile_definitions(v0_native_cpu_tests PRIVATE
         TH008_CXX="${CMAKE_CXX_COMPILER}"
         TH008_CXX_FLAGS="${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}"
@@ -438,6 +443,11 @@ if(BUILD_TESTING)
         TH023_EXTENSION="$<TARGET_FILE:th021_research_extension>")
     add_dependencies(th023_structure_tests th021_research_extension)
     add_test(NAME TH023StructureTests COMMAND th023_structure_tests)
+
+    add_executable(th024_structure_tests tests/robustness/Th024StructureTests.cpp)
+    target_compile_definitions(th024_structure_tests PRIVATE
+        THIRAN_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME TH024StructureTests COMMAND th024_structure_tests)
 
     if(THIRAN_ENABLE_NATIVE_GPU)
         add_executable(v0_workflow_gpu_cli_tests tests/tooling/v0/WorkflowGpuCliTests.cpp)

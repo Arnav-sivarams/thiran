@@ -289,9 +289,23 @@ int main() {
                 "same input supplied twice created duplicate physical reservations");
         require(duplicateRead.observe().success, "duplicate-read operation failed");
 
+        for (std::size_t index = 0; index < 500; ++index) {
+            auto stressResource = runtime::AsyncResource::create();
+            auto stressGate = std::make_shared<Gate>();
+            {
+                auto stress = submit({{stressResource, index % 3 == 0 ?
+                    runtime::AsyncReservationKind::Write : runtime::AsyncReservationKind::Read}},
+                    stressGate);
+                if (index % 2 == 0)
+                    require(stress.observe().success, "host async stress observation failed");
+            }
+            require(stressResource.activeReads() == 0 && stressResource.activeWrites() == 0,
+                    "host async stress leaked a reservation");
+        }
+
         auto evidence = runtime::asyncRuntimeEvidence();
-        require(evidence.submitted >= 19 && evidence.observations >= 19 &&
-                evidence.droppedDrains >= 2 && evidence.unobservedFailures >= 1,
+        require(evidence.submitted >= 519 && evidence.observations >= 519 &&
+                evidence.droppedDrains >= 252 && evidence.unobservedFailures >= 1,
                 "device-neutral async evidence counters are incomplete");
 
         std::cout << "V0AsyncLifetimeTests PASS " << checks << " checks\n"

@@ -3,7 +3,8 @@
 #include "semantic/v0/Analyzer.hpp"
 #include "semantic/v0/Evaluator.hpp"
 #include "semantic/v0/Verifier.hpp"
-#include <cstdlib>
+#include "tooling/v0/BuildConfig.hpp"
+#include "tooling/v0/Process.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -17,6 +18,7 @@ namespace fs=std::filesystem;
 using namespace thiran::v0;
 namespace s=thiran::v0::semantic;
 namespace b=thiran::v0::backend;
+namespace tooling=thiran::v0::tooling;
 static int checks=0;
 static void require(bool yes,const std::string& what) { ++checks; if(!yes) throw std::runtime_error(what); }
 static s::Module source(const std::string& text) {
@@ -29,26 +31,27 @@ static b::NativeResult extract(const s::Module& m,const std::string& name="main"
     return b::extractStrictNative(m,facts,name,standalone);
 }
 static fs::path temporary() {
-    std::string pattern="/tmp/th008-native-XXXXXX";
+    std::string pattern="/tmp/th008 native XXXXXX";
     auto ptr=pattern.data();
     if(!mkdtemp(ptr)) throw std::runtime_error("mkdtemp failed");
     return pattern;
 }
-static std::string read(const fs::path& p) { std::ifstream f(p); return {std::istreambuf_iterator<char>(f),{}}; }
 struct Run { std::string output,error,command; int exit=0; fs::path artifact; };
 static Run compileRun(const std::string& cpp,const fs::path& dir,const std::string& stem) {
     fs::path src=dir/(stem+".cpp"),exe=dir/stem,build=TH008_BUILD;
     { std::ofstream f(src); f<<cpp; }
-    std::string command=std::string(TH008_CXX)+" -std=c++20 "+TH008_CXX_FLAGS+" -I"+TH008_INCLUDE+" "+src.string()+
-        " "+(build/"libthiran_v0_storage.a").string()+" "+(build/"libthiran_v0_async.a").string()+
-        " "+(build/"libthiran_v0_analysis.a").string()+
-        " "+(build/"libthiran_v0_semantic.a").string()+" "+(build/"libthiran_v0_frontend.a").string()+
-        " -o "+exe.string()+" 2>"+(dir/(stem+".compile.err")).string();
-    int status=std::system(command.c_str());
-    require(status==0,"host compile failed: "+read(dir/(stem+".compile.err")));
-    std::string run=exe.string()+" >"+(dir/(stem+".out")).string()+" 2>"+(dir/(stem+".err")).string();
-    status=std::system(run.c_str());
-    return {read(dir/(stem+".out")),read(dir/(stem+".err")),command,WIFEXITED(status)?WEXITSTATUS(status):255,exe};
+    std::vector<std::string> arguments{"-std=c++20"};
+    const auto configured=tooling::configuredHostCompilerArguments();
+    arguments.insert(arguments.end(),configured.begin(),configured.end());
+    arguments.insert(arguments.end(),{"-I",TH008_INCLUDE,src.string(),
+        (build/"libthiran_v0_storage.a").string(),(build/"libthiran_v0_async.a").string(),
+        (build/"libthiran_v0_analysis.a").string(),(build/"libthiran_v0_semantic.a").string(),
+        (build/"libthiran_v0_frontend.a").string(),"-o",exe.string()});
+    auto compiled=tooling::runProcess({TH008_CXX,arguments});
+    require(compiled.launched&&compiled.exitStatus==0,"host compile failed: "+compiled.standardError);
+    auto executed=tooling::runProcess({exe.string(),{}});
+    std::string command=TH008_CXX;for(const auto& argument:arguments)command+=" ["+argument+"]";
+    return {executed.standardOutput,executed.standardError,command,executed.exitStatus,exe};
 }
 static std::string expected(const s::Module& m) { return s::evaluateCall(m,"main",{}).format()+"\n"; }
 static bool equivalent(const std::string& oracle,const std::string& native) { return oracle==native; }

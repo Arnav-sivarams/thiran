@@ -162,6 +162,32 @@ int main() {
                 std::get<storage::Tensor>(*dynamicRun.value).storageId() != host.storageId(),
                 "GPU execution introduced hidden copy-on-write or mutated input");
 
+        for (std::size_t caseIndex = 0; caseIndex < 100; ++caseIndex) {
+            std::vector<std::int64_t> left, right;
+            for (std::size_t element = 0; element < 17; ++element) {
+                left.push_back(static_cast<std::int64_t>((caseIndex * 37 + element * 19) % 257) - 128);
+                right.push_back(static_cast<std::int64_t>((caseIndex * 29 + element * 31) % 129) - 64);
+            }
+            const auto nativeLeft = storage::Tensor::materializeI64({17}, left);
+            const auto nativeRight = storage::Tensor::materializeI64({17}, right);
+            semantic::RuntimeValue referenceLeft{semantic::RuntimeTensor{
+                semantic::TypeKind::I64, {17}, left, {}}};
+            semantic::RuntimeValue referenceRight{semantic::RuntimeTensor{
+                semantic::TypeKind::I64, {17}, right, {}}};
+            const auto oracle = semantic::evaluateCall(
+                dynamicModule, "f", {referenceLeft, referenceRight});
+            const auto fused = backend::executeNativeGpu(
+                dynamicRegion, {nativeLeft, nativeRight}, 0, {true, true});
+            const auto unfused = backend::executeNativeGpu(
+                dynamicRegion, {nativeLeft, nativeRight}, 0, {false, false});
+            require(oracle.ok && oracle.value && fused.ok() && unfused.ok() &&
+                    std::get<storage::Tensor>(*fused.value).logicalI64Values() ==
+                        std::get<semantic::RuntimeTensor>(oracle.value->data).values &&
+                    std::get<storage::Tensor>(*unfused.value).logicalI64Values() ==
+                        std::get<semantic::RuntimeTensor>(oracle.value->data).values,
+                    "generated reference/fused/unfused physical-GPU differential mismatch");
+        }
+
         const auto copyModule = compile(
             "fn copied(x:Tensor<i64,1>,y:Tensor<i64,1>)->Tensor<i64,1>{let z=copy(x)\nreturn z+y}");
         const auto copyRegion = region(copyModule, "copied", false);
@@ -189,6 +215,21 @@ int main() {
         const auto again = backend::executeNativeGpu(dynamicRegion, {host, host});
         require(again.ok() && std::get<storage::Tensor>(*again.value).logicalI64Values() == dynamicValues,
                 "repeat GPU execution was not deterministic");
+
+        for (std::size_t index = 0; index < 150; ++index) {
+            auto stress = backend::submitNativeGpuAsync(dynamicRegion, {host, host});
+            require(stress.ok() && stress.pending && !stress.pending->observed(),
+                    "physical GPU async stress submission failed");
+            auto observed = stress.pending->observe();
+            require(observed.ok() &&
+                    std::get<storage::Tensor>(*observed.value).logicalI64Values() == dynamicValues &&
+                    observed.evidence.activeReadReservations == 0 &&
+                    observed.evidence.activeWriteReservations == 0 &&
+                    observed.evidence.retainedPlannerAllocations == 0,
+                    "physical GPU async stress changed output or leaked owned resources");
+        }
+        require(host.asyncResource().activeReads() == 0 && host.asyncResource().activeWrites() == 0,
+                "physical GPU async stress left input reservations active");
 
         auto independentHost = host.deepCopy();
         auto pendingA = backend::submitNativeGpuAsync(dynamicRegion, {host, host});

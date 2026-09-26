@@ -7,6 +7,7 @@
 #include "tooling/v0/BuildConfig.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -180,6 +181,27 @@ int main() {
                     std::vector<float>({3.75f}),
                 "CPU AOT f32 semantics mismatch");
 
+        const auto specialRegion = region(compile(
+            "fn identity(x:Tensor<f32,1>)->Tensor<f32,1>{return x}"),
+            "identity", false);
+        const std::vector<float> specials{
+            0.0f, -0.0f, std::numeric_limits<float>::min(),
+            std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max(),
+            std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()};
+        const auto specialInput = storage::Tensor::materializeF32({7}, specials);
+        const auto specialEntry = artifact::specializeEntry(specialRegion, {specialInput});
+        auto specialBuild = artifact::buildCpuAot(
+            specialRegion, toolchain(), {root / "f32-specials.tha", {}, specialEntry});
+        auto specialRun = specialBuild.success ? artifact::loadAndExecuteArtifact(
+            root / "f32-specials.tha", {specialInput}) : artifact::ArtifactExecutionResult{};
+        require(specialBuild.success && specialRun.ok(), "CPU f32-special identity failed");
+        const auto specialOutput = std::get<storage::Tensor>(*specialRun.value).logicalF32Values();
+        require(specialOutput.size() == specials.size(), "CPU f32-special output size changed");
+        for (std::size_t index = 0; index < specials.size(); ++index)
+            require(std::bit_cast<std::uint32_t>(specialOutput[index]) ==
+                    std::bit_cast<std::uint32_t>(specials[index]),
+                    "CPU f32-special identity changed bits");
+
         const auto overflowRegion = region(compile(
             "fn main()->Tensor<i64,1>{let A=[9223372036854775807]\nlet B=[1]\nreturn A+B}"));
         auto overflowBuild = artifact::buildCpuAot(
@@ -198,6 +220,58 @@ int main() {
                 artifact::formatArtifactValue(*integerRun.value) &&
                 unfusedBuild.manifest->planDigest != integerBuild.manifest->planDigest,
                 "planned/fused and conservative CPU AOT semantics/identity mismatch");
+
+        const auto differentialModule = compile(
+            "fn diff(x:Tensor<i64,1>,y:Tensor<i64,1>)->Tensor<i64,1>{"
+            "let a=x+y\nlet b=a.*y\nreturn b-x}");
+        const auto differentialRegion = region(differentialModule, "diff", false);
+        std::vector<std::int64_t> initialValues(17, 1);
+        const auto differentialInput = storage::Tensor::materializeI64({17}, initialValues);
+        const auto differentialEntry = artifact::specializeEntry(
+            differentialRegion, {differentialInput, differentialInput});
+        auto differentialFused = artifact::buildCpuAot(
+            differentialRegion, toolchain(), {root / "differential-fused.tha", {true, true}, differentialEntry});
+        auto differentialUnfused = artifact::buildCpuAot(
+            differentialRegion, toolchain(), {root / "differential-unfused.tha", {false, false}, differentialEntry});
+        require(differentialFused.success && differentialUnfused.success,
+                "CPU differential artifacts failed to build");
+        for (std::size_t caseIndex = 0; caseIndex < 100; ++caseIndex) {
+            std::vector<std::int64_t> left, right;
+            for (std::size_t element = 0; element < 17; ++element) {
+                left.push_back(static_cast<std::int64_t>((caseIndex * 37 + element * 19) % 257) - 128);
+                right.push_back(static_cast<std::int64_t>((caseIndex * 29 + element * 31) % 129) - 64);
+            }
+            const auto nativeLeft = storage::Tensor::materializeI64({17}, left);
+            const auto nativeRight = storage::Tensor::materializeI64({17}, right);
+            semantic::RuntimeValue referenceLeft{semantic::RuntimeTensor{
+                semantic::TypeKind::I64, {17}, left, {}}};
+            semantic::RuntimeValue referenceRight{semantic::RuntimeTensor{
+                semantic::TypeKind::I64, {17}, right, {}}};
+            const auto oracle = semantic::evaluateCall(
+                differentialModule, "diff", {referenceLeft, referenceRight});
+            const auto fused = artifact::loadAndExecuteArtifact(
+                root / "differential-fused.tha", {nativeLeft, nativeRight});
+            const auto unfused = artifact::loadAndExecuteArtifact(
+                root / "differential-unfused.tha", {nativeLeft, nativeRight});
+            require(oracle.ok && oracle.value && fused.ok() && unfused.ok() &&
+                    std::get<storage::Tensor>(*fused.value).logicalI64Values() ==
+                        std::get<semantic::RuntimeTensor>(oracle.value->data).values &&
+                    std::get<storage::Tensor>(*unfused.value).logicalI64Values() ==
+                        std::get<semantic::RuntimeTensor>(oracle.value->data).values,
+                    "generated reference/fused/unfused CPU differential mismatch");
+        }
+        const auto differentialMaximum = storage::Tensor::materializeI64(
+            {17}, std::vector<std::int64_t>(17, std::numeric_limits<std::int64_t>::max()));
+        const auto differentialOne = storage::Tensor::materializeI64(
+            {17}, std::vector<std::int64_t>(17, 1));
+        const auto fusedOverflow = artifact::loadAndExecuteArtifact(
+            root / "differential-fused.tha", {differentialMaximum, differentialOne});
+        const auto unfusedOverflow = artifact::loadAndExecuteArtifact(
+            root / "differential-unfused.tha", {differentialMaximum, differentialOne});
+        require(!fusedOverflow.ok() && !unfusedOverflow.ok() &&
+                fusedOverflow.error->code == "TH-SPEC-I64-OVERFLOW" &&
+                unfusedOverflow.error->code == "TH-SPEC-I64-OVERFLOW",
+                "fused/unfused CPU overflow behavior diverged");
 
         const auto addRegion = region(compile(
             "fn add(x:Tensor<i64,1>,y:Tensor<i64,1>)->Tensor<i64,1>{return x+y}"),

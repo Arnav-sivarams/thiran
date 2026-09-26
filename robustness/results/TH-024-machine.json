@@ -1,0 +1,1732 @@
+{
+  "artifact_reproducibility": {
+    "cpu": {
+      "build_count": 10,
+      "byte_reproducibility": "QUALIFIED",
+      "execution_digests": [
+        "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+      ],
+      "file_sha256": [
+        "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+      ],
+      "payload_digests": [
+        "fnv1a64:55673af371cf0c0d"
+      ],
+      "plan_digests": [
+        "fnv1a64:1b6ee84d652f550d"
+      ],
+      "records": [
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 0/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 1/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 2/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 3/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 4/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 5/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 6/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 7/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 8/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        },
+        {
+          "path": "/tmp/th024-cpu-460nrkzy/build 9/program.tha",
+          "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        }
+      ],
+      "region_digests": [
+        "fnv1a64:d5b80c2831a5de9b"
+      ],
+      "unique_execution_digest_count": 1,
+      "unique_file_sha256_count": 1,
+      "unique_payload_digest_count": 1,
+      "unique_plan_digest_count": 1,
+      "unique_region_digest_count": 1
+    },
+    "gpu": {
+      "build_count": 10,
+      "byte_reproducibility": "QUALIFIED",
+      "execution_digests": [
+        "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+      ],
+      "file_sha256": [
+        "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+      ],
+      "payload_digests": [
+        "fnv1a64:d9e365c54f548d0c"
+      ],
+      "plan_digests": [
+        "fnv1a64:6da3f3409c05b005"
+      ],
+      "records": [
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 0/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 1/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 2/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 3/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 4/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 5/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 6/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 7/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 8/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 9/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        }
+      ],
+      "region_digests": [
+        "fnv1a64:d5b80c2831a5de9b"
+      ],
+      "unique_execution_digest_count": 1,
+      "unique_file_sha256_count": 1,
+      "unique_payload_digest_count": 1,
+      "unique_plan_digest_count": 1,
+      "unique_region_digest_count": 1
+    }
+  },
+  "checkpoint": "TH-024",
+  "commit": "3b9a0cb0147fc28180c76c013e633c22eeb247fb",
+  "completed_phases": {
+    "clean_copy": {
+      "artifact_extension_cli": "PASS",
+      "build": "PASS",
+      "completed_utc": "2026-09-26T19:25:09Z",
+      "configure": "PASS",
+      "copy_includes_uncommitted_changes": true,
+      "cpu": "PASS",
+      "excluded": [
+        ".git",
+        "build",
+        "CMake caches",
+        "__pycache__",
+        "*.pyc"
+      ],
+      "physical_gpu": "PASS",
+      "status": "PASS",
+      "test_python": "/home/arnav/Projects/Experiments/thiran/.venv/bin/python"
+    },
+    "concurrency_failures": {
+      "completed_utc": "2026-09-26T19:03:20Z",
+      "concurrent_checks": 4,
+      "concurrent_cpu_artifact_runs": 4,
+      "concurrent_cpu_builds": 4,
+      "concurrent_gpu_artifact_runs": 2,
+      "driver_unavailable": {
+        "code": "GPU-DRIVER-NOT-FOUND",
+        "fallback": "NONE"
+      },
+      "gpu_oom": "NOT QUALIFIED",
+      "host_allocation_failure": "PASS via checked allocation arithmetic",
+      "invalid_device": {
+        "code": "GPU-INVALID-DEVICE",
+        "fallback": "NONE"
+      },
+      "malformed_ptx": "PASS via v0_native_artifact_gpu_integration_tests",
+      "status": "PASS",
+      "unique_concurrent_build_sha256_count": 1
+    },
+    "configurations": {
+      "completed_utc": "2026-09-26T19:17:57Z",
+      "configurations": {
+        "cpu_only": {
+          "build": "PASS",
+          "fallback": "NONE",
+          "gpu_disabled_code": "GPU-BACKEND-NOT-BUILT",
+          "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+        },
+        "debug": {
+          "build": "PASS",
+          "compiler_warnings": null,
+          "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+          "test_output_sha256": "649532d727ec743f72ff97a55de0dc896d6029324b7504d333196dada2f02b82",
+          "tests": "PASS"
+        },
+        "gpu": {
+          "build": "PASS",
+          "fallback": "NONE",
+          "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+          "test_output_sha256": "20c6289922f475fbf196429d2a4628048f07e1eeb88335475b15c6dda891efd5",
+          "tests": "PASS"
+        },
+        "release": {
+          "build": "PASS",
+          "compiler_warnings": null,
+          "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+          "test_output_sha256": "8b9b8b052371091ef3860258a5d8f351188b4d09a1af1c1f32b9e08fb1d8bb45",
+          "tests": "PASS"
+        },
+        "semantic_oracle": {
+          "output_sha256": "9dc643229373b931825a3a7c9965099f844e48cce8c5fa034d23c590b44f2e4a",
+          "status": "PASS",
+          "tests": 17
+        },
+        "warnings": {
+          "build": "PASS",
+          "compiler_warnings": 0,
+          "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+          "test_output_sha256": "6291301eff209c78c2c75e44b0ad5807cc77508609acb7a786a1dbf3e85e251b",
+          "tests": "PASS"
+        }
+      },
+      "cross_configuration_semantics": "PASS",
+      "status": "PASS"
+    },
+    "cpu": {
+      "artifact_reproducibility": {
+        "build_count": 10,
+        "byte_reproducibility": "QUALIFIED",
+        "execution_digests": [
+          "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+        ],
+        "file_sha256": [
+          "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+        ],
+        "payload_digests": [
+          "fnv1a64:55673af371cf0c0d"
+        ],
+        "plan_digests": [
+          "fnv1a64:1b6ee84d652f550d"
+        ],
+        "records": [
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 0/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 1/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 2/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 3/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 4/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 5/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 6/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 7/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 8/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          },
+          {
+            "path": "/tmp/th024-cpu-460nrkzy/build 9/program.tha",
+            "sha256": "954a93d9da07b151cd8284c6523c3f6224a96648b08972064df416912616380b"
+          }
+        ],
+        "region_digests": [
+          "fnv1a64:d5b80c2831a5de9b"
+        ],
+        "unique_execution_digest_count": 1,
+        "unique_file_sha256_count": 1,
+        "unique_payload_digest_count": 1,
+        "unique_plan_digest_count": 1,
+        "unique_region_digest_count": 1
+      },
+      "completed_utc": "2026-09-26T17:57:23Z",
+      "concurrent_artifact_runs": 4,
+      "corruption_cases": 15,
+      "execution_repeats": 100,
+      "path_independence": "PASS",
+      "same_output_contention": {
+        "final_valid": true,
+        "statuses": [
+          0,
+          0
+        ]
+      },
+      "status": "PASS",
+      "transactional_failpoints": [
+        {
+          "failpoint": "before_temp_creation",
+          "false_success": false,
+          "old_bytes_preserved": true,
+          "stale_temps": 0
+        },
+        {
+          "failpoint": "after_temp_creation",
+          "false_success": false,
+          "old_bytes_preserved": true,
+          "stale_temps": 0
+        },
+        {
+          "failpoint": "after_partial_write",
+          "false_success": false,
+          "old_bytes_preserved": true,
+          "stale_temps": 0
+        },
+        {
+          "failpoint": "after_full_write",
+          "false_success": false,
+          "old_bytes_preserved": true,
+          "stale_temps": 0
+        },
+        {
+          "failpoint": "after_file_fsync",
+          "false_success": false,
+          "old_bytes_preserved": true,
+          "stale_temps": 0
+        },
+        {
+          "failpoint": "after_rename",
+          "false_success": false,
+          "final_valid": true,
+          "stale_temps": 0
+        }
+      ],
+      "unique_execution_digests": 1
+    },
+    "cpu_soak": {
+      "backend": "cpu",
+      "completed_utc": "2026-09-26T18:22:35Z",
+      "digest_mismatches": 0,
+      "duration_seconds": 36.557,
+      "failures": 0,
+      "fallback": "NONE",
+      "iterations": 1000,
+      "resource_baseline": "per-execution owned resources released by accepted suites",
+      "resource_final": "per-execution owned resources released by accepted suites",
+      "status": "PASS",
+      "unobserved_async_errors": 0,
+      "workload_mix": [
+        "AOT artifact process lifecycle",
+        "v0_async_lifetime_tests",
+        "v0_extension_tests",
+        "v0_model_deployment_tests",
+        "v0_graphics_tests",
+        "v0_native_artifact_tests"
+      ]
+    },
+    "extension": {
+      "completed_utc": "2026-09-26T17:57:35Z",
+      "concurrent_build_unique_sha256_count": 1,
+      "concurrent_builds": 4,
+      "controlled_failure_cycles": 100,
+      "execution_path_independent": true,
+      "load_freeze_destroy_cycles": 100,
+      "plugin_free_execution": true,
+      "registry_digests": [
+        "fnv1a64:9883785c146b4d5f"
+      ],
+      "semantic_identity_path_independent": true,
+      "status": "PASS",
+      "unique_artifact_sha256_count": 1
+    },
+    "focused_suites": {
+      "async_host_operations": 500,
+      "checkpoint_and_model_old_data_preserved_pre_rename": true,
+      "checkpoint_corruption_cases": 20,
+      "completed_utc": "2026-09-26T18:21:12Z",
+      "model_corruption_cases": 12,
+      "persistence_failpoints": [
+        "before_temp_creation",
+        "after_temp_creation",
+        "after_partial_write",
+        "after_full_write",
+        "after_file_fsync",
+        "after_rename"
+      ],
+      "status": "PASS",
+      "suites": {
+        "th023_structure_tests": {
+          "status": "PASS",
+          "stdout_sha256": "44a284d6f65347c9fcfb2520b09f7035a5c04b03a4746827885afe16f80153d6"
+        },
+        "v0_async_lifetime_tests": {
+          "status": "PASS",
+          "stdout_sha256": "aaff6b833801aa307c81bad1a52279be99ae1dd9f18a3bf92234382484f43ef1"
+        },
+        "v0_autodiff_tests": {
+          "status": "PASS",
+          "stdout_sha256": "538b55d3a954a8108a6189c9a77464775907faeb51d389a53a9115c8fe266478"
+        },
+        "v0_extension_gpu_integration_tests": {
+          "status": "PASS",
+          "stdout_sha256": "c08bfdae7d6d006273de09a178c7ba03e9ef2bcb973d574bd0869f7179053a88"
+        },
+        "v0_extension_tests": {
+          "status": "PASS",
+          "stdout_sha256": "5cf99eaf12291daa9c3955a493f6a4c6e6084cc9288739860301c1cb729580f1"
+        },
+        "v0_frontend_tests": {
+          "status": "PASS",
+          "stdout_sha256": "0babe069f49a4940d451770fb7d06eb1be0fa668a06662f2c7112077ba604faf"
+        },
+        "v0_graphics_gpu_integration_tests": {
+          "status": "PASS",
+          "stdout_sha256": "bbce152cb631829a3260d841e4fa9d3ec43625181d48307d60eba830ca400f53"
+        },
+        "v0_graphics_tests": {
+          "status": "PASS",
+          "stdout_sha256": "359cb5b49bda2cee68f73a5f0753194dec6851fffb4e47bfc99661534b2080f5"
+        },
+        "v0_model_deployment_tests": {
+          "status": "PASS",
+          "stdout_sha256": "d4bd2ae16a5aaa63d1141b851b6b168baaf993eb47f46f0a31895f1ebee4f3a5"
+        },
+        "v0_model_gpu_integration_tests": {
+          "status": "PASS",
+          "stdout_sha256": "4c27f9fbc1c2f6e15c127d41e8be350baa747e95bf0314b212fc8e1e5ac204d5"
+        },
+        "v0_native_artifact_gpu_integration_tests": {
+          "status": "PASS",
+          "stdout_sha256": "fb6a35891c557a2f7b2c58888920a5f277a8796797d9a59a334c220852899ce0"
+        },
+        "v0_native_artifact_tests": {
+          "status": "PASS",
+          "stdout_sha256": "6562dc6fcd666e41896bc37df26768ef64e0664cc900a77fc5d1f754c4ecc2b4"
+        },
+        "v0_native_gpu_integration_tests": {
+          "status": "PASS",
+          "stdout_sha256": "5e9f02d4efc9a3c72d94004259f43eae50087a486f6289bcb4ef15c622edf224"
+        },
+        "v0_physical_plan_tests": {
+          "status": "PASS",
+          "stdout_sha256": "78a895bc2a601d1d515356725296ab1ac56706c5e9618e065013b2f0dc541dd9"
+        },
+        "v0_scan_tests": {
+          "status": "PASS",
+          "stdout_sha256": "7965c39dd9146f38b1986e8d0f5df82da2215499dc22fc0e93f67d456c4da506"
+        },
+        "v0_semantic_tests": {
+          "status": "PASS",
+          "stdout_sha256": "5c5ad1202960b47bdeb58b656b92f955b2f7582016d4f059aac5938e68806332"
+        },
+        "v0_storage_tests": {
+          "status": "PASS",
+          "stdout_sha256": "b52bb46e0c103e96d95d95c04e5b5208b10845e735928886d410a6462416b871"
+        },
+        "v0_training_tests": {
+          "status": "PASS",
+          "stdout_sha256": "cd8c05808d46a48a78a132a436c76ace12d175dd31f89233e3c448c6d76aab07"
+        }
+      }
+    },
+    "frontend_diagnostics": {
+      "cases": {
+        "embedded_nul": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "3be42bdc388bc00f96242f966473eaee717520b4a4ef8c84ecfbe7aa2311b3d7"
+        },
+        "empty": {
+          "classification": "rejected_bounded",
+          "code": "INPUT-EMPTY",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "59ee522a32bca1824ab38d6142be3bcbd2c2ce8468db51a5c65220f344a274f9"
+        },
+        "invalid_utf8": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "384f1fba8d03f747459e7918e9b79e5a1842666a3c6b51faa960fe01b190c51f"
+        },
+        "lexical": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "98fe42276431cc7eb96e4f740ed712c233c2ceb216f8cd698c9ecc672a45a264"
+        },
+        "long_identifier": {
+          "classification": "accepted_bounded",
+          "code": "NONE",
+          "exit_status": 0,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "long_line": {
+          "classification": "accepted_bounded",
+          "code": "NONE",
+          "exit_status": 0,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "malformed_comment": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "3cfc0eda102e9957cda33fbdcc2492678d6892c30ddf208a4e9d4db2a8b2debf"
+        },
+        "malformed_numeric": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "edd84236fc4ae88af1d41845969f9c0172d03c3ed1168642d218556e399b59fc"
+        },
+        "nested_expression": {
+          "classification": "accepted_bounded",
+          "code": "NONE",
+          "exit_status": 0,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "parse": {
+          "classification": "rejected_bounded",
+          "code": "SYNTAX",
+          "exit_status": 3,
+          "repetitions": 20,
+          "stable": true,
+          "stderr_sha256": "a6cec455a121df432361e7cd15d728547c7fd395bf4c4bed09cd5627a2d500d1"
+        },
+        "rank_mismatch": {
+          "classification": "rejected_bounded",
+          "code": "TH005-MATMUL-RANK",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "565882c6d0d9b006946baa0b4796b93cf90c95624822fad40ab5175fc5c16878"
+        },
+        "shape_mismatch": {
+          "classification": "rejected_bounded",
+          "code": "TH-SPEC-BROADCAST",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "a134417f724b1a50c17992127d32480b77e10fd8c71e92ece6ed77dc98ca88f9"
+        },
+        "type_mismatch": {
+          "classification": "rejected_bounded",
+          "code": "TH005-OPERAND-TYPE",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "803e930b8da91286850ed304f7cee3f5cc61cd66a9267ffaf3ace0a50dd309bf"
+        },
+        "undefined_name": {
+          "classification": "rejected_bounded",
+          "code": "TH005-UNDEFINED-NAME",
+          "exit_status": 3,
+          "repetitions": 20,
+          "stable": true,
+          "stderr_sha256": "77c1e60ff6fc81e2c92dc646605954809a86aac6d378a89db2eef4f1b8c7cb39"
+        },
+        "unloaded_extension": {
+          "classification": "rejected_bounded",
+          "code": "TH005-UNKNOWN-FUNCTION",
+          "exit_status": 3,
+          "repetitions": 1,
+          "stable": true,
+          "stderr_sha256": "fc726fb1ef81a8db67e3e07bc35f3700ec1abc1b560ee6458721d262a6532f80"
+        },
+        "use_after_move": {
+          "classification": "rejected_bounded",
+          "code": "TH006-USE-AFTER-MOVE",
+          "exit_status": 3,
+          "repetitions": 20,
+          "stable": true,
+          "stderr_sha256": "78352b9a081e751018ee661858554445b61264c6fab7e2bc62324a84e96e3eea"
+        }
+      },
+      "completed_utc": "2026-09-26T17:49:13Z",
+      "representative_repeats": 20,
+      "status": "PASS"
+    },
+    "gpu": {
+      "artifact_reproducibility": {
+        "build_count": 10,
+        "byte_reproducibility": "QUALIFIED",
+        "execution_digests": [
+          "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+        ],
+        "file_sha256": [
+          "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        ],
+        "payload_digests": [
+          "fnv1a64:d9e365c54f548d0c"
+        ],
+        "plan_digests": [
+          "fnv1a64:6da3f3409c05b005"
+        ],
+        "records": [
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 0/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 1/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 2/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 3/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 4/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 5/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 6/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 7/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 8/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          },
+          {
+            "path": "/tmp/th024-gpu-om8t2bhw/build 9/program.tha",
+            "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+          }
+        ],
+        "region_digests": [
+          "fnv1a64:d5b80c2831a5de9b"
+        ],
+        "unique_execution_digest_count": 1,
+        "unique_file_sha256_count": 1,
+        "unique_payload_digest_count": 1,
+        "unique_plan_digest_count": 1,
+        "unique_region_digest_count": 1
+      },
+      "completed_utc": "2026-09-26T18:06:54Z",
+      "concurrent_artifact_runs": 2,
+      "execution_repeats": 100,
+      "fallback": "NONE",
+      "physical": true,
+      "status": "PASS",
+      "unique_execution_digests": 1
+    },
+    "gpu_soak": {
+      "backend": "gpu",
+      "completed_utc": "2026-09-26T18:26:32Z",
+      "digest_mismatches": 0,
+      "duration_seconds": 241.73,
+      "failures": 0,
+      "fallback": "NONE",
+      "iterations": 500,
+      "resource_baseline": "per-execution owned resources released by accepted suites",
+      "resource_final": "per-execution owned resources released by accepted suites",
+      "status": "PASS",
+      "unobserved_async_errors": 0,
+      "workload_mix": [
+        "AOT artifact process lifecycle",
+        "v0_native_gpu_integration_tests",
+        "v0_extension_gpu_integration_tests",
+        "v0_model_gpu_integration_tests",
+        "v0_graphics_gpu_integration_tests",
+        "v0_native_artifact_gpu_integration_tests"
+      ]
+    },
+    "preflight": {
+      "cli_version": "Thiran 0.2.0-alpha-dev",
+      "completed_utc": "2026-09-26T19:21:15Z",
+      "head": "3b9a0cb0147fc28180c76c013e633c22eeb247fb",
+      "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "seeds": [
+        240024,
+        240025
+      ],
+      "status": "PASS",
+      "th023_sha256": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31"
+    },
+    "sanitizers": {
+      "checks": {
+        "asan_ubsan": {
+          "leak_detection": false,
+          "status": "PASS",
+          "test_output_sha256": "08bca4d664a81a9f1b59c7e08c90f95ef6aabd4e7c11681f75703826084100fa"
+        },
+        "compute_sanitizer": {
+          "reason": "compute-sanitizer not installed",
+          "status": "UNAVAILABLE"
+        },
+        "lsan": {
+          "exit_status": 1,
+          "output_sha256": "2daf175b901c2d0f678bde918ee7e88c62b63ceacc766f3fa1f98a00cad36501",
+          "reason": "ptrace/environment incompatibility",
+          "status": "UNAVAILABLE"
+        },
+        "tsan": {
+          "output_sha256": "876c677082ec4757e39fb42424514cf7b9abe633b6a5c4f61a4125f4103b6b21",
+          "reason": "toolchain/runtime could not produce useful host-concurrency evidence",
+          "status": "UNAVAILABLE"
+        }
+      },
+      "completed_utc": "2026-09-26T19:20:46Z",
+      "status": "PASS"
+    }
+  },
+  "configuration_results": {
+    "cpu_only": {
+      "build": "PASS",
+      "fallback": "NONE",
+      "gpu_disabled_code": "GPU-BACKEND-NOT-BUILT",
+      "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+    },
+    "debug": {
+      "build": "PASS",
+      "compiler_warnings": null,
+      "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+      "test_output_sha256": "649532d727ec743f72ff97a55de0dc896d6029324b7504d333196dada2f02b82",
+      "tests": "PASS"
+    },
+    "gpu": {
+      "build": "PASS",
+      "fallback": "NONE",
+      "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+      "test_output_sha256": "20c6289922f475fbf196429d2a4628048f07e1eeb88335475b15c6dda891efd5",
+      "tests": "PASS"
+    },
+    "release": {
+      "build": "PASS",
+      "compiler_warnings": null,
+      "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+      "test_output_sha256": "8b9b8b052371091ef3860258a5d8f351188b4d09a1af1c1f32b9e08fb1d8bb45",
+      "tests": "PASS"
+    },
+    "sanitizers": {
+      "asan_ubsan": {
+        "leak_detection": false,
+        "status": "PASS",
+        "test_output_sha256": "08bca4d664a81a9f1b59c7e08c90f95ef6aabd4e7c11681f75703826084100fa"
+      },
+      "compute_sanitizer": {
+        "reason": "compute-sanitizer not installed",
+        "status": "UNAVAILABLE"
+      },
+      "lsan": {
+        "exit_status": 1,
+        "output_sha256": "2daf175b901c2d0f678bde918ee7e88c62b63ceacc766f3fa1f98a00cad36501",
+        "reason": "ptrace/environment incompatibility",
+        "status": "UNAVAILABLE"
+      },
+      "tsan": {
+        "output_sha256": "876c677082ec4757e39fb42424514cf7b9abe633b6a5c4f61a4125f4103b6b21",
+        "reason": "toolchain/runtime could not produce useful host-concurrency evidence",
+        "status": "UNAVAILABLE"
+      }
+    },
+    "semantic_oracle": {
+      "output_sha256": "9dc643229373b931825a3a7c9965099f844e48cce8c5fa034d23c590b44f2e4a",
+      "status": "PASS",
+      "tests": 17
+    },
+    "warnings": {
+      "build": "PASS",
+      "compiler_warnings": 0,
+      "semantic_output_sha256": "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2",
+      "test_output_sha256": "6291301eff209c78c2c75e44b0ad5807cc77508609acb7a786a1dbf3e85e251b",
+      "tests": "PASS"
+    }
+  },
+  "corruption_outcomes": [
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_0",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_1",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_magic",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_header",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_half",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_last",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-MAGIC",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-MAGIC",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "magic_flip",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-FORMAT-VERSION",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-FORMAT-VERSION",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "format",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-COMPILER-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-COMPILER-ABI",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "compiler_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-RUNTIME-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-RUNTIME-ABI",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "runtime_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-BACKEND",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-BACKEND",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "backend",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-KIND",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-PAYLOAD-KIND",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_kind",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "INTEGRITY/DECODE",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_last_bit",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "INTEGRITY/DECODE",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_middle_bit",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRAILING-DATA",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRAILING-DATA",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "trailing_garbage",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_0",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_1",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_magic",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_header",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_half",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "truncate_last",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-MAGIC",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-MAGIC",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "magic_flip",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-FORMAT-VERSION",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-FORMAT-VERSION",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "format",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-COMPILER-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-COMPILER-ABI",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "compiler_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-RUNTIME-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-RUNTIME-ABI",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "runtime_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-BACKEND",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-BACKEND",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "backend",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-KIND",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-PAYLOAD-KIND",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_kind",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "INTEGRITY/DECODE",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_last_bit",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-PAYLOAD-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "INTEGRITY/DECODE",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "payload_middle_bit",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "ARTIFACT-TRAILING-DATA",
+      "crashed": false,
+      "deterministic": true,
+      "expected_category": "ARTIFACT-TRAILING-DATA",
+      "fallback": "NONE",
+      "file_type": ".tha",
+      "mutation": "trailing_garbage",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-MAGIC",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-MAGIC",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "magic",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-FORMAT-VERSION",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-FORMAT-VERSION",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "format",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-RUNTIME-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-RUNTIME-ABI",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "runtime_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "truncation",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-TRAILING-DATA",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-TRAILING-DATA",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "trailing_data",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-BUNDLE-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-BUNDLE-INTEGRITY",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "outer_digest",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-EMBEDDED-ARTIFACT",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-EMBEDDED-ARTIFACT",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "embedded_artifact",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-ARTIFACT-BACKEND",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-ARTIFACT-BACKEND",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "embedded_backend",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-LENGTH",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-LENGTH",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "declared_length",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-IDENTITY",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-IDENTITY",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "model_identity",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-PARAMETER-DIGEST",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-PARAMETER-DIGEST",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "parameter_digest",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "MODEL-DUPLICATE-BINDING",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "MODEL-DUPLICATE-BINDING",
+      "fallback": "NONE",
+      "file_type": ".thm",
+      "mutation": "binding_table",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-MAGIC",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-MAGIC",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "magic",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-FORMAT-VERSION",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-FORMAT-VERSION",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "format",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-TRAINING-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-TRAINING-ABI",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "training_abi",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-TRUNCATED",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-TRUNCATED",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "truncation",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-TRAILING-DATA",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-TRAILING-DATA",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "trailing_data",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-LENGTH",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-LENGTH",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "declared_length",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-PAYLOAD-INTEGRITY",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-PAYLOAD-INTEGRITY",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "payload_digest",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-DUPLICATE-PARAMETER",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-DUPLICATE-PARAMETER",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "duplicate_parameter",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-MISSING-PARAMETER",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-MISSING-PARAMETER",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "missing_parameter",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-UNEXPECTED-PARAMETER",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-UNEXPECTED-PARAMETER",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "unexpected_parameter",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-PARAMETER-ORDER",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-PARAMETER-ORDER",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "parameter_order",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-DTYPE",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-DTYPE",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "dtype",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-RANK",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-RANK",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "rank",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-SHAPE",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-SHAPE",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "shape",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-OPTIMIZER-MISMATCH",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-OPTIMIZER-MISMATCH",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "optimizer_state",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-STEP",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-STEP",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "step",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-TRAINING-ABI",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-TRAINING-ABI",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "plan_signature",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-PARAMETER-DIGEST",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-PARAMETER-DIGEST",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "parameter_digest",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-NUMERIC-PAYLOAD",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-NUMERIC-PAYLOAD",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "numeric_payload",
+      "partial_execution": false
+    },
+    {
+      "actual_error_code": "CKPT-MODEL-IDENTITY",
+      "crashed": false,
+      "deterministic": true,
+      "evidence_suite": "v0_model_deployment_tests",
+      "expected_category": "CKPT-MODEL-IDENTITY",
+      "fallback": "NONE",
+      "file_type": ".thc",
+      "mutation": "model_identity",
+      "partial_execution": false
+    }
+  ],
+  "environment": {
+    "cmake": "cmake version 3.28.3",
+    "compiler": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "ninja": "1.11.1",
+    "physical_gpu": {
+      "compute_capability": "8.6",
+      "driver_api": 13030,
+      "memory_mib": 4096,
+      "name": "NVIDIA GeForce RTX 3050 Ti Laptop GPU"
+    },
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "mandatory_matrix": {
+    "1": "PASS",
+    "10": "PASS",
+    "11": "PASS",
+    "12": "PASS",
+    "13": "PASS",
+    "14": "PASS",
+    "15": "PASS",
+    "16": "PASS",
+    "17": "PASS",
+    "18": "PASS",
+    "19": "PASS",
+    "2": "PASS",
+    "20": "PASS",
+    "21": "PASS",
+    "22": "PASS",
+    "23": "PASS",
+    "24": "PASS",
+    "25": "PASS",
+    "26": "PASS",
+    "27": "PASS",
+    "28": "PASS",
+    "29": "PASS",
+    "3": "PASS",
+    "30": "PASS",
+    "31": "PASS",
+    "32": "PASS",
+    "33": "PASS",
+    "34": "PASS",
+    "35": "PASS",
+    "36": "PASS",
+    "37": "PASS",
+    "38": "PASS",
+    "39": "PASS",
+    "4": "PASS",
+    "40": "PASS",
+    "41": "PASS",
+    "42": "PASS",
+    "43": "PASS",
+    "44": "PASS",
+    "45": "PASS",
+    "46": "PASS",
+    "47": "PASS",
+    "48": "PASS",
+    "49": "PASS",
+    "5": "PASS",
+    "50": "PASS",
+    "51": "PASS",
+    "52": "PASS",
+    "53": "PASS",
+    "54": "PASS",
+    "55": "PASS",
+    "56": "PASS",
+    "57": "NOT QUALIFIED",
+    "58": "PASS",
+    "59": "PASS",
+    "6": "PASS",
+    "60": "PASS",
+    "61": "PASS",
+    "62": "PASS",
+    "63": "PASS",
+    "64": "PASS",
+    "65": "PASS",
+    "66": "PASS",
+    "67": "PASS",
+    "68": "PASS",
+    "69": "PASS",
+    "7": "PASS",
+    "70": "PASS",
+    "71": "PASS",
+    "72": "PASS",
+    "73": "PASS",
+    "74": "PASS",
+    "75": "PASS",
+    "76": "PASS",
+    "77": "PASS",
+    "78": "PASS",
+    "79": "PASS",
+    "8": "PASS",
+    "80": "PASS",
+    "81": "PASS",
+    "82": "PASS",
+    "83": "PASS",
+    "84": "PASS",
+    "9": "PASS"
+  },
+  "methodology_revision": 1,
+  "methodology_revisions": [
+    {
+      "change": "pass accepted baseline THIRAN_PYTHON_EXECUTABLE explicitly",
+      "counts_changed": false,
+      "reason": "clean configure selected unrelated Python without required Torch",
+      "revision": 1
+    }
+  ],
+  "physical_gpu": {
+    "artifact_reproducibility": {
+      "build_count": 10,
+      "byte_reproducibility": "QUALIFIED",
+      "execution_digests": [
+        "a6634b4bbb9c05174f74f9106b45230e497b3e786d5a538e49c5c2073e474ba2"
+      ],
+      "file_sha256": [
+        "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+      ],
+      "payload_digests": [
+        "fnv1a64:d9e365c54f548d0c"
+      ],
+      "plan_digests": [
+        "fnv1a64:6da3f3409c05b005"
+      ],
+      "records": [
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 0/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 1/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 2/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 3/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 4/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 5/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 6/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 7/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 8/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        },
+        {
+          "path": "/tmp/th024-gpu-om8t2bhw/build 9/program.tha",
+          "sha256": "f1d68ba6f372ab3560f0289f865ed0aa438b005cfc0bb63d48d4393374c3bb2a"
+        }
+      ],
+      "region_digests": [
+        "fnv1a64:d5b80c2831a5de9b"
+      ],
+      "unique_execution_digest_count": 1,
+      "unique_file_sha256_count": 1,
+      "unique_payload_digest_count": 1,
+      "unique_plan_digest_count": 1,
+      "unique_region_digest_count": 1
+    },
+    "concurrent_artifact_runs": 2,
+    "execution_repeats": 100,
+    "fallback": "NONE",
+    "physical": true,
+    "unique_execution_digests": 1
+  },
+  "repeat_counts": {
+    "artifact_builds": 10,
+    "async_gpu": 150,
+    "async_host": 500,
+    "cpu_execution": 100,
+    "cpu_soak": 1000,
+    "diagnostic": 20,
+    "differential": 100,
+    "extension_cycles": 100,
+    "gpu_execution": 100,
+    "gpu_soak": 500
+  },
+  "schema": "thiran.robustness.v0",
+  "seeds": [
+    240024,
+    240025
+  ],
+  "soak_results": {
+    "cpu": {
+      "backend": "cpu",
+      "digest_mismatches": 0,
+      "duration_seconds": 36.557,
+      "failures": 0,
+      "fallback": "NONE",
+      "iterations": 1000,
+      "resource_baseline": "per-execution owned resources released by accepted suites",
+      "resource_final": "per-execution owned resources released by accepted suites",
+      "status": "PASS",
+      "unobserved_async_errors": 0,
+      "workload_mix": [
+        "AOT artifact process lifecycle",
+        "v0_async_lifetime_tests",
+        "v0_extension_tests",
+        "v0_model_deployment_tests",
+        "v0_graphics_tests",
+        "v0_native_artifact_tests"
+      ]
+    },
+    "gpu": {
+      "backend": "gpu",
+      "digest_mismatches": 0,
+      "duration_seconds": 241.73,
+      "failures": 0,
+      "fallback": "NONE",
+      "iterations": 500,
+      "resource_baseline": "per-execution owned resources released by accepted suites",
+      "resource_final": "per-execution owned resources released by accepted suites",
+      "status": "PASS",
+      "unobserved_async_errors": 0,
+      "workload_mix": [
+        "AOT artifact process lifecycle",
+        "v0_native_gpu_integration_tests",
+        "v0_extension_gpu_integration_tests",
+        "v0_model_gpu_integration_tests",
+        "v0_graphics_gpu_integration_tests",
+        "v0_native_artifact_gpu_integration_tests"
+      ]
+    }
+  },
+  "status": "TH-024 PASS",
+  "th023": {
+    "path": "benchmarks/results/TH-023-machine.json",
+    "sha256_after": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31",
+    "sha256_before": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31"
+  },
+  "unavailable": {
+    "compute_sanitizer": {
+      "reason": "compute-sanitizer not installed",
+      "status": "UNAVAILABLE"
+    },
+    "cross_gpu": {
+      "reason": "no second physical GPU architecture available",
+      "status": "UNAVAILABLE"
+    },
+    "cross_machine": {
+      "reason": "no second physical computer available",
+      "status": "UNAVAILABLE"
+    },
+    "gpu_oom": {
+      "reason": "deliberately exhausting 4 GiB VRAM is unsafe",
+      "status": "NOT QUALIFIED"
+    },
+    "lsan": {
+      "exit_status": 1,
+      "output_sha256": "2daf175b901c2d0f678bde918ee7e88c62b63ceacc766f3fa1f98a00cad36501",
+      "reason": "ptrace/environment incompatibility",
+      "status": "UNAVAILABLE"
+    },
+    "tsan": {
+      "output_sha256": "876c677082ec4757e39fb42424514cf7b9abe633b6a5c4f61a4125f4103b6b21",
+      "reason": "toolchain/runtime could not produce useful host-concurrency evidence",
+      "status": "UNAVAILABLE"
+    }
+  }
+}

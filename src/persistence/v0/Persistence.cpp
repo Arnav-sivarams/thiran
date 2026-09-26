@@ -1,7 +1,9 @@
 #include "persistence/v0/Persistence.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -180,6 +182,13 @@ std::vector<std::byte> readFile(const std::filesystem::path& path, std::uint64_t
 
 std::optional<std::string> transactionalWrite(const std::filesystem::path& path,
                                               const std::vector<std::byte>& bytes) {
+#if THIRAN_TEST_FAILPOINTS
+    const char* configuredFailpoint = std::getenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT");
+    const auto failpoint = [&](std::string_view name) {
+        return configuredFailpoint && name == configuredFailpoint;
+    };
+    if (failpoint("before_temp_creation")) return "test failpoint before temp creation";
+#endif
     const auto absolute = std::filesystem::absolute(path);
     const auto parent = absolute.parent_path();
     if (!std::filesystem::is_directory(parent)) return "output parent does not exist";
@@ -197,21 +206,44 @@ std::optional<std::string> transactionalWrite(const std::filesystem::path& path,
         }
         return message + ": " + std::strerror(saved);
     };
+#if THIRAN_TEST_FAILPOINTS
+    if (failpoint("after_temp_creation")) { errno = EIO; return fail("test failpoint after temp creation"); }
+#endif
     std::size_t offset = 0;
     while (offset < bytes.size()) {
-        const auto written = ::write(descriptor, bytes.data() + offset, bytes.size() - offset);
+        std::size_t request = bytes.size() - offset;
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_partial_write") && offset == 0 && request > 1)
+            request = std::max<std::size_t>(1, request / 2);
+#endif
+        const auto written = ::write(descriptor, bytes.data() + offset, request);
         if (written < 0) {
             if (errno == EINTR) continue;
             return fail("temporary file write failed");
         }
         if (written == 0) { errno = EIO; return fail("temporary file write made no progress"); }
         offset += static_cast<std::size_t>(written);
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_partial_write") && offset < bytes.size()) {
+            errno = EIO;
+            return fail("test failpoint after partial write");
+        }
+#endif
     }
+#if THIRAN_TEST_FAILPOINTS
+    if (failpoint("after_full_write")) { errno = EIO; return fail("test failpoint after full write"); }
+#endif
     if (::fsync(descriptor) != 0) return fail("temporary file fsync failed");
+#if THIRAN_TEST_FAILPOINTS
+    if (failpoint("after_file_fsync")) { errno = EIO; return fail("test failpoint after file fsync"); }
+#endif
     if (::close(descriptor) != 0) { descriptor = -1; return fail("temporary file close failed"); }
     descriptor = -1;
     if (::rename(temporary.c_str(), absolute.c_str()) != 0) return fail("atomic rename failed");
     renamed = true;
+#if THIRAN_TEST_FAILPOINTS
+    if (failpoint("after_rename")) return "test failpoint after rename before directory fsync";
+#endif
     const int directory = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (directory < 0) return "file installed but parent directory could not be opened for fsync";
     const bool synced = ::fsync(directory) == 0;

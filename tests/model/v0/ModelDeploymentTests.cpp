@@ -438,6 +438,23 @@ void checkpointMatrix(const fs::path& root, const Lifecycle& life) {
     require(!failedSave.ok() && failedSave.error->code == "CKPT-WRITE" && readBytes(checkpoint) == prior,
             "transactional checkpoint failure replaced the prior valid checkpoint");
     fs::remove(fs::path(checkpoint.string() + ".tmp"));
+    for (const char* failpoint : {"before_temp_creation", "after_temp_creation",
+                                  "after_partial_write", "after_full_write", "after_file_fsync"}) {
+        ::setenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT", failpoint, 1);
+        const auto injected = training::saveTrainingCheckpoint(
+            checkpoint, life.checkpointSchema, life.plan, *life.restored.state);
+        ::unsetenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT");
+        require(!injected.ok() && injected.error->code == "CKPT-WRITE" &&
+                readBytes(checkpoint) == prior && !fs::exists(fs::path(checkpoint.string() + ".tmp")),
+                std::string("checkpoint failpoint did not preserve old bytes/temp hygiene: ") + failpoint);
+    }
+    ::setenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT", "after_rename", 1);
+    const auto postRename = training::saveTrainingCheckpoint(
+        checkpoint, life.checkpointSchema, life.plan, *life.restored.state);
+    ::unsetenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT");
+    require(!postRename.ok() && postRename.error->code == "CKPT-WRITE" &&
+            training::loadTrainingCheckpoint(checkpoint, life.checkpointSchema, life.plan).ok(),
+            "checkpoint post-rename failpoint left an invalid final file or claimed success");
 }
 
 void resumeMatrix(const fs::path& root) {
@@ -605,6 +622,23 @@ void bundleMatrix(const fs::path& root, const Lifecycle& life) {
             "excessive bundle payload length accepted");
     require(model::loadModelBundle(bundlePath, "wrong.model").error->code == "MODEL-IDENTITY",
             "wrong expected model identity accepted");
+
+    const auto prior = readBytes(bundlePath);
+    for (const char* failpoint : {"before_temp_creation", "after_temp_creation",
+                                  "after_partial_write", "after_full_write", "after_file_fsync"}) {
+        ::setenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT", failpoint, 1);
+        const auto injected = model::writeModelBundle(life.bundle, bundlePath);
+        ::unsetenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT");
+        require(!injected.ok() && injected.error->code == "MODEL-WRITE" &&
+                readBytes(bundlePath) == prior && !fs::exists(fs::path(bundlePath.string() + ".tmp")),
+                std::string("model failpoint did not preserve old bytes/temp hygiene: ") + failpoint);
+    }
+    ::setenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT", "after_rename", 1);
+    const auto postRename = model::writeModelBundle(life.bundle, bundlePath);
+    ::unsetenv("THIRAN_TEST_PERSISTENCE_WRITE_FAILPOINT");
+    require(!postRename.ok() && postRename.error->code == "MODEL-WRITE" &&
+            model::loadModelBundle(bundlePath).ok(),
+            "model post-rename failpoint left an invalid final file or claimed success");
 }
 
 void freshProcessAndAudit(const fs::path& root, const Lifecycle& life) {

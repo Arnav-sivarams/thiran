@@ -5,8 +5,11 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cerrno>
 #include <cstring>
+#include <cstdlib>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -455,21 +458,88 @@ void writeFile(const std::filesystem::path& path, const std::vector<std::byte>& 
 
 void writeFileAtomically(const std::filesystem::path& path,
                          const std::vector<std::byte>& bytes) {
-    auto pattern = path.string() + ".tmp.XXXXXX";
+#if THIRAN_TEST_FAILPOINTS
+    const char* configuredFailpoint = std::getenv("THIRAN_TEST_ARTIFACT_WRITE_FAILPOINT");
+    const auto failpoint = [&](std::string_view name) {
+        return configuredFailpoint && name == configuredFailpoint;
+    };
+    if (failpoint("before_temp_creation")) throw std::runtime_error("test failpoint before temp creation");
+#endif
+    const auto absolute = std::filesystem::absolute(path);
+    const auto parent = absolute.parent_path();
+    if (!std::filesystem::is_directory(parent))
+        throw std::runtime_error("output parent does not exist");
+    auto pattern = absolute.string() + ".tmp.XXXXXX";
     std::vector<char> name(pattern.begin(), pattern.end());
     name.push_back('\0');
-    const int descriptor = ::mkstemp(name.data());
+    int descriptor = ::mkstemp(name.data());
     if (descriptor < 0) throw std::runtime_error("cannot create transactional output");
-    ::close(descriptor);
     const std::filesystem::path temporary = name.data();
+    bool renamed = false;
+    auto fail = [&](std::string message) {
+        const int saved = errno;
+        if (descriptor >= 0) (void)::close(descriptor);
+        descriptor = -1;
+        if (!renamed) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+        }
+        throw std::runtime_error(std::move(message) + ": " + std::strerror(saved));
+    };
     try {
-        writeFile(temporary, bytes);
-        std::error_code failure;
-        std::filesystem::rename(temporary, path, failure);
-        if (failure) throw std::runtime_error("cannot replace artifact: " + failure.message());
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_temp_creation")) { errno = EIO; fail("test failpoint after temp creation"); }
+#endif
+        std::size_t offset = 0;
+        while (offset < bytes.size()) {
+            std::size_t request = bytes.size() - offset;
+#if THIRAN_TEST_FAILPOINTS
+            if (failpoint("after_partial_write") && offset == 0 && request > 1)
+                request = std::max<std::size_t>(1, request / 2);
+#endif
+            const auto written = ::write(descriptor, bytes.data() + offset, request);
+            if (written < 0) {
+                if (errno == EINTR) continue;
+                fail("temporary artifact write failed");
+            }
+            if (written == 0) { errno = EIO; fail("temporary artifact write made no progress"); }
+            offset += static_cast<std::size_t>(written);
+#if THIRAN_TEST_FAILPOINTS
+            if (failpoint("after_partial_write") && offset < bytes.size()) {
+                errno = EIO;
+                fail("test failpoint after partial write");
+            }
+#endif
+        }
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_full_write")) { errno = EIO; fail("test failpoint after full write"); }
+#endif
+        if (::fsync(descriptor) != 0) fail("temporary artifact fsync failed");
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_file_fsync")) { errno = EIO; fail("test failpoint after file fsync"); }
+#endif
+        if (::close(descriptor) != 0) { descriptor = -1; fail("temporary artifact close failed"); }
+        descriptor = -1;
+        if (::rename(temporary.c_str(), absolute.c_str()) != 0) fail("cannot replace artifact");
+        renamed = true;
+#if THIRAN_TEST_FAILPOINTS
+        if (failpoint("after_rename"))
+            throw std::runtime_error("test failpoint after rename before directory fsync");
+#endif
+        const int directory = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (directory < 0) throw std::runtime_error("artifact installed but parent directory cannot be opened for fsync");
+        const bool synced = ::fsync(directory) == 0;
+        const int saved = errno;
+        (void)::close(directory);
+        if (!synced)
+            throw std::runtime_error("artifact installed but parent directory fsync failed: " +
+                                     std::string(std::strerror(saved)));
     } catch (...) {
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
+        if (descriptor >= 0) (void)::close(descriptor);
+        if (!renamed) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+        }
         throw;
     }
 }
