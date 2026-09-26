@@ -172,8 +172,15 @@ add_library(thiran_v0_interop STATIC src/interop/v0/NativeLibrary.cpp)
 target_link_libraries(thiran_v0_interop PUBLIC thiran_v0_analysis)
 
 add_library(thiran_v0_tooling STATIC
-    src/tooling/v0/Driver.cpp)
-target_link_libraries(thiran_v0_tooling PUBLIC thiran_v0_native_cpu thiran_v0_interop thiran_v0_process)
+    src/tooling/v0/Driver.cpp
+    src/tooling/v0/Cli.cpp)
+target_link_libraries(thiran_v0_tooling PUBLIC
+    thiran_v0_native_cpu thiran_v0_interop thiran_v0_process
+    thiran_v0_artifact thiran_v0_model_runtime)
+target_compile_definitions(thiran_v0_tooling PRIVATE
+    TH009_CXX="${CMAKE_CXX_COMPILER}"
+    TH009_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+    TH009_BUILD="${CMAKE_BINARY_DIR}")
 
 add_executable(thiran-v0 src/tooling/v0/Main.cpp)
 target_link_libraries(thiran-v0 PRIVATE thiran_v0_tooling)
@@ -185,7 +192,8 @@ target_compile_definitions(thiran-v0 PRIVATE
 add_library(thiran_core STATIC ${CORE_SOURCES})
 
 add_executable(Thiran src/main.cpp)
-target_link_libraries(Thiran PRIVATE thiran_core)
+target_link_libraries(Thiran PRIVATE thiran_core thiran_v0_tooling)
+set_target_properties(Thiran PROPERTIES OUTPUT_NAME thiran)
 
 install(PROGRAMS "$<TARGET_FILE:Thiran>" DESTINATION bin RENAME thiran)
 configure_file(cmake/Uninstall.cmake.in cmake_uninstall.cmake @ONLY)
@@ -274,8 +282,9 @@ if(BUILD_TESTING)
         TH017_INCLUDE="${CMAKE_SOURCE_DIR}/include"
         TH017_SOURCE="${CMAKE_SOURCE_DIR}"
         TH017_BUILD="${CMAKE_BINARY_DIR}"
-        TH017_RUNTIME="$<TARGET_FILE:thiran-model>")
-    add_dependencies(v0_model_deployment_tests thiran-model)
+        TH017_RUNTIME="$<TARGET_FILE:thiran-model>"
+        TH022_CLI="$<TARGET_FILE:Thiran>")
+    add_dependencies(v0_model_deployment_tests thiran-model Thiran)
     add_test(NAME V0ModelDeploymentTests COMMAND v0_model_deployment_tests)
 
     if(THIRAN_ENABLE_NATIVE_GPU)
@@ -322,8 +331,9 @@ if(BUILD_TESTING)
             TH017_CXX="${CMAKE_CXX_COMPILER}"
             TH017_INCLUDE="${CMAKE_SOURCE_DIR}/include"
             TH017_BUILD="${CMAKE_BINARY_DIR}"
-            TH017_RUNTIME="$<TARGET_FILE:thiran-model>")
-        add_dependencies(v0_model_gpu_integration_tests thiran-model)
+            TH017_RUNTIME="$<TARGET_FILE:thiran-model>"
+            TH022_CLI="$<TARGET_FILE:Thiran>")
+        add_dependencies(v0_model_gpu_integration_tests thiran-model Thiran)
         add_test(NAME V0ModelGpuIntegrationTests COMMAND v0_model_gpu_integration_tests)
         set_tests_properties(V0ModelGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
     endif()
@@ -353,11 +363,22 @@ if(BUILD_TESTING)
     add_dependencies(v0_tooling_tests thiran-v0)
     add_test(NAME V0ToolingTests COMMAND v0_tooling_tests)
 
+    add_executable(v0_workflow_cli_tests tests/tooling/v0/WorkflowCliTests.cpp)
+    target_link_libraries(v0_workflow_cli_tests PRIVATE thiran_v0_process)
+    target_compile_definitions(v0_workflow_cli_tests PRIVATE
+        TH022_CLI="$<TARGET_FILE:Thiran>"
+        TH022_EXTENSION="$<TARGET_FILE:th021_research_extension>"
+        TH022_BAD_ABI="$<TARGET_FILE:th021_bad_abi_extension>"
+        TH022_MALFORMED="$<TARGET_FILE:th021_malformed_extension>"
+        TH022_DUPLICATE_OP="$<TARGET_FILE:th021_duplicate_op_extension>"
+        TH022_NATIVE_GPU=$<BOOL:${THIRAN_ENABLE_NATIVE_GPU}>)
+    add_test(NAME V0WorkflowCliTests COMMAND v0_workflow_cli_tests)
+
     add_library(th021_research_extension SHARED
         tests/fixtures/extensions/research_ops/ResearchOps.cpp)
     target_include_directories(th021_research_extension PRIVATE "${CMAKE_SOURCE_DIR}/include")
     set_target_properties(th021_research_extension PROPERTIES PREFIX "")
-    foreach(kind IN ITEMS no_entry bad_abi malformed init_fail zero_ops)
+    foreach(kind IN ITEMS no_entry bad_abi malformed init_fail zero_ops duplicate_op)
         add_library(th021_${kind}_extension SHARED
             tests/fixtures/extensions/research_ops/FailureExtension.cpp)
         target_include_directories(th021_${kind}_extension PRIVATE "${CMAKE_SOURCE_DIR}/include")
@@ -367,6 +388,7 @@ if(BUILD_TESTING)
     target_compile_definitions(th021_malformed_extension PRIVATE TH021_MALFORMED=1)
     target_compile_definitions(th021_init_fail_extension PRIVATE TH021_INIT_FAIL=1)
     target_compile_definitions(th021_zero_ops_extension PRIVATE TH021_ZERO_OPS=1)
+    target_compile_definitions(th021_duplicate_op_extension PRIVATE TH021_DUPLICATE_OP=1)
 
     add_executable(th021_extension_artifact_runner
         tests/extension/v0/ExtensionArtifactRunner.cpp)
@@ -391,6 +413,19 @@ if(BUILD_TESTING)
     add_dependencies(v0_extension_tests th021_extension_artifact_runner th021_research_extension th021_no_entry_extension
         th021_bad_abi_extension th021_malformed_extension th021_init_fail_extension th021_zero_ops_extension)
     add_test(NAME V0ExtensionTests COMMAND v0_extension_tests)
+    add_dependencies(v0_workflow_cli_tests Thiran th021_research_extension
+        th021_bad_abi_extension th021_malformed_extension th021_duplicate_op_extension)
+
+    if(THIRAN_ENABLE_NATIVE_GPU)
+        add_executable(v0_workflow_gpu_cli_tests tests/tooling/v0/WorkflowGpuCliTests.cpp)
+        target_link_libraries(v0_workflow_gpu_cli_tests PRIVATE thiran_v0_process)
+        target_compile_definitions(v0_workflow_gpu_cli_tests PRIVATE
+            TH022_CLI="$<TARGET_FILE:Thiran>"
+            TH022_EXTENSION="$<TARGET_FILE:th021_research_extension>")
+        add_dependencies(v0_workflow_gpu_cli_tests Thiran th021_research_extension)
+        add_test(NAME V0WorkflowGpuCliTests COMMAND v0_workflow_gpu_cli_tests)
+        set_tests_properties(V0WorkflowGpuCliTests PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)

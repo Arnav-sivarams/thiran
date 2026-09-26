@@ -27,6 +27,11 @@ std::string data(semantic::ValueId id) { return "data_v" + std::to_string(id); }
 std::string shapeName(semantic::ValueId id) { return "shape_v" + std::to_string(id); }
 std::string element(semantic::ValueId id) { return "element_v" + std::to_string(id); }
 std::string slotName(PhysicalSlotId id) { return "physical_slot_" + std::to_string(id); }
+std::string cppFloat(float value) {
+    std::ostringstream out;
+    out << std::hexfloat << value << 'f';
+    return out.str();
+}
 
 std::string valueList(const std::vector<semantic::ValueId>& ids) {
     std::string result = "{";
@@ -181,7 +186,7 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
             continue;
         }
         if (node.op == RegionOp::Float) {
-            out << "  float " << v(node.id) << " = " << *node.floating << "f;\n";
+            out << "  float " << v(node.id) << " = " << cppFloat(*node.floating) << ";\n";
             continue;
         }
         if (node.op == RegionOp::Alias) {
@@ -265,7 +270,7 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
                     switch (recipeNode.opcode) {
                     case extension::ScalarOpcode::Input: out << operand(operation.dependencies.at(recipeNode.input)); break;
                     case extension::ScalarOpcode::ConstantF32:
-                        out << std::setprecision(std::numeric_limits<float>::max_digits10) << recipeNode.constant << "f"; break;
+                        out << cppFloat(recipeNode.constant); break;
                     case extension::ScalarOpcode::Add: out << value(recipeNode.left) << " + " << value(recipeNode.right); break;
                     case extension::ScalarOpcode::Subtract: out << value(recipeNode.left) << " - " << value(recipeNode.right); break;
                     case extension::ScalarOpcode::Multiply: out << value(recipeNode.left) << " * " << value(recipeNode.right); break;

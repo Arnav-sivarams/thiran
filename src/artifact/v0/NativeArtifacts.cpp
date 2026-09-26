@@ -453,6 +453,27 @@ void writeFile(const std::filesystem::path& path, const std::vector<std::byte>& 
     if (!output) throw std::runtime_error("short file write");
 }
 
+void writeFileAtomically(const std::filesystem::path& path,
+                         const std::vector<std::byte>& bytes) {
+    auto pattern = path.string() + ".tmp.XXXXXX";
+    std::vector<char> name(pattern.begin(), pattern.end());
+    name.push_back('\0');
+    const int descriptor = ::mkstemp(name.data());
+    if (descriptor < 0) throw std::runtime_error("cannot create transactional output");
+    ::close(descriptor);
+    const std::filesystem::path temporary = name.data();
+    try {
+        writeFile(temporary, bytes);
+        std::error_code failure;
+        std::filesystem::rename(temporary, path, failure);
+        if (failure) throw std::runtime_error("cannot replace artifact: " + failure.message());
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
+    }
+}
+
 std::vector<std::byte> serializeArtifact(const NativeArtifact& artifact) {
     const auto region = serializeRegion(artifact.region);
     Writer writer;
@@ -874,7 +895,7 @@ std::optional<ArtifactError> writeArtifact(const NativeArtifact& artifact,
         const auto parent = std::filesystem::absolute(path).parent_path();
         if (!std::filesystem::is_directory(parent))
             return error(ArtifactErrorCategory::Compilation, "ARTIFACT-OUTPUT", "output parent does not exist");
-        writeFile(path, serializeArtifact(artifact));
+        writeFileAtomically(path, serializeArtifact(artifact));
         return {};
     } catch (const std::exception& failure) {
         return error(ArtifactErrorCategory::Compilation, "ARTIFACT-WRITE", failure.what());

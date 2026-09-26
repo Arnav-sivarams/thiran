@@ -174,6 +174,25 @@ execution. The second requires physical CUDA access (77 means unavailable) and
 checks native GPU, persistent PTX AOT, GPU JIT/cache identity, zero-size and
 invalid-device behavior, and plugin-free physical fresh-process execution.
 
+TH-022 production CLI qualification adds:
+
+```bash
+./build/debug/v0_workflow_cli_tests
+./build/gpu/v0_workflow_gpu_cli_tests
+ctest --test-dir build/gpu -R '^V0Workflow(Gpu)?CliTests$' --output-on-failure
+```
+
+The CPU suite invokes the production `thiran` binary and covers help and
+misuse, files and paths with spaces, structured diagnostics, native CPU source
+execution, CPU `.tha` build/inspect/run, explicit extension loading,
+plugin-free deployment, and adversarial extension/artifact inputs. In a
+CPU-only build it also requires an explicit GPU request to fail with
+`GPU-BACKEND-NOT-BUILT`. The GPU suite must run with physical device access;
+CTest code 77 means unavailable, not qualified. It executes ordinary and
+extension source through the production CLI, then physically executes the PTX
+artifacts after compilation (and after extension removal for the extension
+case), with kernel evidence and `fallback=NONE`.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

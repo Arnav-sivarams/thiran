@@ -20,6 +20,7 @@ void expr(std::ostringstream& out, const Expr& value) {
         using T = std::decay_t<decltype(n)>;
         if constexpr (std::is_same_v<T, IdentifierExpr>) out << "id(" << n.name << ')';
         else if constexpr (std::is_same_v<T, IntegerLiteralExpr>) out << "int(" << n.spelling << ')';
+        else if constexpr (std::is_same_v<T, RealLiteralExpr>) out << "real(" << n.spelling << ')';
         else if constexpr (std::is_same_v<T, BooleanLiteralExpr>) out << "bool(" << (n.value ? "true" : "false") << ')';
         else if constexpr (std::is_same_v<T, TensorLiteralExpr>) {
             out << "tensor(";

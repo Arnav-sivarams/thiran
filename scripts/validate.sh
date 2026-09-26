@@ -60,20 +60,20 @@ do
     "${repo_root}/build/debug/${harness}"
 done
 
-"${repo_root}/build/debug/Thiran" --help
-"${repo_root}/build/debug/Thiran" --version
-"${repo_root}/build/debug/Thiran" doctor
-"${repo_root}/build/debug/Thiran" --plan \
+"${repo_root}/build/debug/thiran" --help
+"${repo_root}/build/debug/thiran" --version
+"${repo_root}/build/debug/thiran" doctor
+"${repo_root}/build/debug/thiran" --plan \
     "${repo_root}/examples/cnn.th" > "${temporary_dir}/plan.txt"
-"${repo_root}/build/debug/Thiran" --emit-region-executor \
+"${repo_root}/build/debug/thiran" --emit-region-executor \
     "${repo_root}/examples/mlp.th" "${temporary_dir}/executor.py"
-"${repo_root}/build/debug/Thiran" --plan \
+"${repo_root}/build/debug/thiran" --plan \
     "${repo_root}/tests/fixtures/modules/basic/main.th" > "${temporary_dir}/module-plan.txt"
-"${repo_root}/build/debug/Thiran" --emit-region-executor \
+"${repo_root}/build/debug/thiran" --emit-region-executor \
     "${repo_root}/tests/fixtures/modules/basic/main.th" "${temporary_dir}/module-executor.py"
-"${repo_root}/build/debug/Thiran" --plan \
+"${repo_root}/build/debug/thiran" --plan \
     "${repo_root}/tests/fixtures/functions/cross_module.th" > "${temporary_dir}/function-plan.txt"
-"${repo_root}/build/debug/Thiran" --emit-region-executor \
+"${repo_root}/build/debug/thiran" --emit-region-executor \
     "${repo_root}/tests/fixtures/functions/cross_module.th" "${temporary_dir}/function-executor.py"
 "${python_executable}" "${temporary_dir}/executor.py" --describe
 

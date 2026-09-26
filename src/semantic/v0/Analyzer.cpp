@@ -1,6 +1,7 @@
 #include "semantic/v0/Analyzer.hpp"
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <set>
@@ -207,6 +208,15 @@ private:
                 if (!value) fail(e.span,"TH005-INTEGER-RANGE","integer literal is outside exact i64 range");
                 Instruction i; i.op=Op::Integer; i.span=e.span; i.integer=*value;
                 return emit(c,std::move(i),{scalar(TypeKind::I64),{},*value});
+            } else if constexpr (std::is_same_v<N, RealLiteralExpr>) {
+                float value = 0.0f;
+                const auto parsed = std::from_chars(n.spelling.data(),
+                    n.spelling.data() + n.spelling.size(), value);
+                if (parsed.ec != std::errc{} || parsed.ptr != n.spelling.data() + n.spelling.size() ||
+                    !std::isfinite(value))
+                    fail(e.span,"TH005-F32-RANGE","real literal is outside finite f32 range");
+                Instruction i; i.op=Op::Float; i.span=e.span; i.floating=value;
+                return emit(c,std::move(i),{scalar(TypeKind::F32),{}, {}});
             } else if constexpr (std::is_same_v<N, BooleanLiteralExpr>) {
                 Instruction i; i.op=Op::Boolean; i.span=e.span; i.boolean=n.value;
                 return emit(c,std::move(i),{scalar(TypeKind::Bool),{}, {}});

@@ -5,6 +5,13 @@ Research numerical extensions are an explicit compiler input described in
 owned, validated scalar recipes; semantic IR and TensorRegion remain
 self-describing, and deployed TH-016 payloads do not load the compiler plugin.
 
+The production developer workflow is described in `spec/TOOLING_V0.md`.
+`thiran check` stops after frontend, verifier, and ownership/effect validation.
+`thiran run` and `thiran build` select CPU or GPU explicitly, perform strict
+native TensorRegion extraction, and use the TH-016 artifact implementation.
+Source run executes a temporary real artifact rather than the evaluator.
+Artifact and model subcommands call the existing TH-016/TH-017 runtime APIs.
+
 ## Current pipeline
 
 ```text

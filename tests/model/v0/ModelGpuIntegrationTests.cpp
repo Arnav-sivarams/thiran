@@ -155,6 +155,14 @@ int main() {
                                              std::string(model::referenceAffineModelIdentity));
         require(loaded.ok() && loaded.bundle->parameterDigest == trainedDigest,
                 "dual bundle reload/digest failed");
+        auto primaryGpu = tooling::runProcess({TH022_CLI,
+            {"model", "run", (root / "affine.thm").string(), "--backend", "gpu",
+             "--input", "2", "--verbose"}});
+        require(primaryGpu.exitStatus == 0 &&
+                primaryGpu.standardError.find("backend=gpu") != std::string::npos &&
+                primaryGpu.standardError.find("kernels=") != std::string::npos &&
+                primaryGpu.standardError.find("fallback=NONE") != std::string::npos,
+                "primary CLI physical GPU model workflow failed");
 
         std::ostringstream predictions;
         predictions << std::setprecision(9) << "input reference cpu gpu\n";

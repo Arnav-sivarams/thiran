@@ -250,6 +250,8 @@ void diagnosticTests() {
         "{\"status\":\"ok\",\"kind\":\"scalar\",\"dtype\":\"i64\",\"value\":2}");
 }
 void adversarialTests() {
+    value("REAL-LITERAL", "let A=[1.0,2.5]", "A",
+        "{\"status\":\"ok\",\"kind\":\"tensor\",\"dtype\":\"f32\",\"shape\":[2],\"values\":[1,2.5]}");
     auto add=valid("OVERFLOW","fn add(x:i64,y:i64)->i64{return x+y}");
     require(evaluateCall(add,"add",{RuntimeValue{std::numeric_limits<std::int64_t>::max()},RuntimeValue{std::int64_t{1}}}).errorId=="TH-SPEC-I64-OVERFLOW","max add overflow");
     auto sub=valid("UNDERFLOW","fn sub(x:i64,y:i64)->i64{return x-y}");

@@ -1,29 +1,35 @@
 # Command-line interfaces
 
-## Thiran compiler
+## Primary Thiran workflow
 
-Exact help text:
+The production developer interface is:
 
 ```text
-Usage:
-  Thiran <source-file>
-  Thiran --plan <source-file>
-  Thiran --emit-plan <source-file> <output-file>
-  Thiran --emit-region-executor <source-file> <output-file>
-  Thiran --version
-  Thiran --help
+thiran check <source.th> [--extension <library>]...
+thiran run <source.th> --backend <cpu|gpu> [--extension <library>]...
+thiran build <source.th> --backend <cpu|gpu> -o <artifact.tha>
+             [--extension <library>]...
+thiran artifact <inspect|run> ...
+thiran model <inspect|run> ...
 ```
 
-Commands:
+Backend selection is explicit and has no fallback. See
+[TOOLING_V0.md](spec/TOOLING_V0.md) for the source, diagnostic, stream, and
+exit-status contracts.
+
+## Legacy Graph/Region compatibility
+
+The earlier Graph/Region compiler modes remain available from the same
+lowercase executable:
 
 ```bash
-./build/debug/Thiran examples/cnn.th
-./build/debug/Thiran --plan examples/cnn.th
-./build/debug/Thiran --emit-plan examples/cnn.th /tmp/region-plan.txt
-./build/debug/Thiran --emit-region-executor examples/cnn.th /tmp/executor.py
-./build/debug/Thiran --help
-./build/debug/Thiran --version
-./build/debug/Thiran doctor
+./build/debug/thiran examples/cnn.th
+./build/debug/thiran --plan examples/cnn.th
+./build/debug/thiran --emit-plan examples/cnn.th /tmp/region-plan.txt
+./build/debug/thiran --emit-region-executor examples/cnn.th /tmp/executor.py
+./build/debug/thiran --help
+./build/debug/thiran --version
+./build/debug/thiran doctor
 ```
 
 `--version` prints exactly `Thiran 0.2.0-alpha-dev`. `doctor` reports Linux/WSL platform, temporary-directory, Python, Torch, optional CUDA, and `full`, `compiler-only`, or `unusable` mode. Python and Torch are optional for compilation and required only to execute generated Python artifacts.

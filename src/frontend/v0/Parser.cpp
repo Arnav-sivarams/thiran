@@ -124,6 +124,9 @@ private:
         if (at(TokenKind::Integer)) {
             auto token = take(); return make(token.span, IntegerLiteralExpr{token.text});
         }
+        if (at(TokenKind::Real)) {
+            auto token = take(); return make(token.span, RealLiteralExpr{token.text});
+        }
         if (at(TokenKind::True) || at(TokenKind::False)) {
             auto token = take(); return make(token.span, BooleanLiteralExpr{token.kind == TokenKind::True});
         }

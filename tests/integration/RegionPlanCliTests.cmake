@@ -4,6 +4,28 @@ if(NOT DEFINED THIRAN_EXECUTABLE OR
     message(FATAL_ERROR "RegionPlanCliTests requires executable, source, and binary paths")
 endif()
 
+set(primary_usage
+"thiran - numerical systems language V0 tooling
+
+Usage:
+  thiran check <source.th> [--extension <library>]...
+  thiran run <source.th> --backend <cpu|gpu> [--extension <library>]...
+  thiran build <source.th> --backend <cpu|gpu> -o <artifact.tha> [--extension <library>]...
+  thiran artifact <inspect|run> ...
+  thiran model <inspect|run> ...
+
+Backends are explicit; GPU requests never fall back to CPU. Source run/build
+currently require a zero-parameter entry (default: main). Extensions are
+loaded only from repeated explicit --extension paths. Artifacts embed lowered
+extension recipes and run without the extension library. Use
+'thiran <command> --help' for command-specific help.
+
+Compatibility commands:
+  thiran --version
+  thiran doctor
+  thiran --plan/--emit-plan/--emit-region-executor ...
+")
+
 set(usage
 "Usage:
   Thiran <source-file>
@@ -66,11 +88,11 @@ endfunction()
 # Cases 1a and 1b: help.
 run_thiran(result stdout stderr --help)
 require_equal("${result}" "0" "help exit")
-require_equal("${stdout}" "${usage}" "help stdout")
+require_equal("${stdout}" "${primary_usage}" "help stdout")
 require_equal("${stderr}" "" "help stderr")
 run_thiran(result stdout stderr -h)
 require_equal("${result}" "0" "short help exit")
-require_equal("${stdout}" "${usage}" "short help stdout")
+require_equal("${stdout}" "${primary_usage}" "short help stdout")
 require_equal("${stderr}" "" "short help stderr")
 
 # Case 2: invalid command.

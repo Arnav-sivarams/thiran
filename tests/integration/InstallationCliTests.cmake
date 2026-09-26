@@ -61,7 +61,7 @@ require_equal("${error}" "" "version stderr")
 execute_process(COMMAND "${thiran}" --help WORKING_DIRECTORY "${TEST_BINARY_DIR}"
                 RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
 require_equal("${result}" "0" "help")
-if(NOT output MATCHES "Thiran --version")
+if(NOT output MATCHES "thiran --version")
     message(FATAL_ERROR "installed help omits version")
 endif()
 

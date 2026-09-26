@@ -155,6 +155,9 @@ void validTests() {
         "V09 multiline wrong");
     check(valid("V10", "let pair = (x, state)") ==
         "module(let(imm,pair,tuple(id(x),id(state))))", "V10 tuple wrong");
+    check(valid("V11", "let values = [1.0, 2.5]") ==
+        "module(let(imm,values,tensor([real(1.0),real(2.5)])))",
+        "V11 real literal wrong");
     check(valid("EXTRA", "fn step(s: State) -> (Tensor<f32, 3>, State) { let mut x = 1; x = -f(A.T)[0:4:-1]; return (x, s) }") ==
         "module(fn(private,step,params(s:State),result((Tensor<f32,3>,State)),body(let(mut,x,int(1)),rebind(x,unary(-,index(call(id(f),member(id(A),T)),slice(int(0),int(4),unary(-,int(1)))))),return(tuple(id(x),id(s))))))",
         "extra type/tuple dump wrong");

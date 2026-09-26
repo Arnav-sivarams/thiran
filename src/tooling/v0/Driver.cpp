@@ -88,13 +88,21 @@ ParseSourceResult CompilerDriver::parseSource(const SourceInput& source) const {
     return out;
 }
 
-DriverResult CompilerDriver::checkSource(const SourceInput& source) const {
+DriverResult CompilerDriver::checkSource(const SourceInput& source,
+                                         extension::ExtensionRegistry* extensions) const {
     DriverResult out;
+    if (source.bytes.empty()) {
+        out.stage = CompilerStage::Input;
+        out.diagnostics.push_back(diagnostic(out.stage, "INPUT-EMPTY",
+                                             "source file is empty", source.identity));
+        return out;
+    }
     auto parsed = parseSource(source);
     if (!parsed.ok()) {
         out.stage = CompilerStage::Syntax; out.diagnostics = std::move(parsed.diagnostics); return out;
     }
-    auto analyzed = semantic::analyze(*parsed.module);
+    auto analyzed = extensions ? semantic::analyze(*parsed.module, *extensions) :
+                                 semantic::analyze(*parsed.module);
     if (!analyzed.diagnostics.empty() || !analyzed.module) {
         out.stage = CompilerStage::Semantic;
         for (const auto& item : analyzed.diagnostics)
@@ -129,10 +137,16 @@ DriverResult CompilerDriver::checkSource(const SourceInput& source) const {
 }
 
 DriverResult CompilerDriver::extractNative(const SourceInput& source, std::string_view entry) const {
-    auto out = checkSource(source);
+    return extractNative(source, entry, backend::NativeTarget::Cpu, nullptr);
+}
+
+DriverResult CompilerDriver::extractNative(const SourceInput& source, std::string_view entry,
+                                           backend::NativeTarget target,
+                                           extension::ExtensionRegistry* extensions) const {
+    auto out = checkSource(source, extensions);
     if (!out.success) return out;
-    auto native = backend::extractStrictNative(out.checked->module, out.checked->ownership,
-                                               std::string(entry), true);
+    auto native = backend::extractStrictRegion(out.checked->module, out.checked->ownership,
+                                               std::string(entry), true, target);
     out.coverage = native.coverage;
     if (!native.ok()) {
         out.success = false; out.stage = CompilerStage::Backend;

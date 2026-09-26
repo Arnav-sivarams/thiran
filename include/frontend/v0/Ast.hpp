@@ -13,6 +13,7 @@ using ExprPtr = std::unique_ptr<Expr>;
 
 struct IdentifierExpr { std::string name; };
 struct IntegerLiteralExpr { std::string spelling; };
+struct RealLiteralExpr { std::string spelling; };
 struct BooleanLiteralExpr { bool value; };
 struct TensorLiteralExpr { std::vector<std::vector<ExprPtr>> rows; };
 struct TupleExpr { std::vector<ExprPtr> elements; };
@@ -28,7 +29,7 @@ struct IndexExpr { ExprPtr object; std::vector<AxisSelector> axes; };
 
 struct Expr {
     SourceSpan span;
-    std::variant<IdentifierExpr, IntegerLiteralExpr, BooleanLiteralExpr,
+    std::variant<IdentifierExpr, IntegerLiteralExpr, RealLiteralExpr, BooleanLiteralExpr,
         TensorLiteralExpr, TupleExpr, UnaryExpr, BinaryExpr, CallExpr, OwnershipExpr,
         MemberExpr, IndexExpr> node;
 };

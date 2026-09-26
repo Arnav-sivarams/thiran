@@ -1,6 +1,7 @@
 #pragma once
 
 #include "backend/v0/NativeCpu.hpp"
+#include "extension/v0/Extension.hpp"
 #include "interop/v0/NativeLibrary.hpp"
 #include "tooling/v0/Process.hpp"
 #include <filesystem>
@@ -73,8 +74,12 @@ class CompilerDriver {
 public:
     explicit CompilerDriver(HostToolchainConfig config);
     ParseSourceResult parseSource(const SourceInput& source) const;
-    DriverResult checkSource(const SourceInput& source) const;
+    DriverResult checkSource(const SourceInput& source,
+                             extension::ExtensionRegistry* extensions = nullptr) const;
     DriverResult extractNative(const SourceInput& source, std::string_view entry) const;
+    DriverResult extractNative(const SourceInput& source, std::string_view entry,
+                               backend::NativeTarget target,
+                               extension::ExtensionRegistry* extensions = nullptr) const;
     DriverResult emitRegion(const SourceInput& source, std::string_view entry) const;
     DriverResult emitNativeCpp(const SourceInput& source, std::string_view entry) const;
     DriverResult buildNative(const SourceInput& source, const BuildOptions& options) const;

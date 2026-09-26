@@ -47,6 +47,7 @@
 #include "utils/SchedulePrinter.hpp"
 #include "utils/ShapePrinter.hpp"
 #include "thiran/Version.hpp"
+#include "tooling/v0/Cli.hpp"
 
 namespace
 {
@@ -498,6 +499,17 @@ int runNormalCompilation(
 
 int main(int argc, char* argv[])
 {
+    if(argc == 1)
+    {
+        thiran::v0::tooling::printPrimaryHelp(std::cout);
+        return 0;
+    }
+    if(argc == 2 &&
+       (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h"))
+    {
+        thiran::v0::tooling::printPrimaryHelp(std::cout);
+        return 0;
+    }
     if(argc == 2 && std::string(argv[1]) == "--version")
     {
         std::cout << "Thiran " << thiran::version::string << "\n";
@@ -519,6 +531,10 @@ int main(int argc, char* argv[])
         const auto result = thiran::driver::Doctor::probe();
         std::cout << thiran::driver::Doctor::format(result);
         return thiran::driver::Doctor::exitCode(result);
+    }
+    if(thiran::v0::tooling::isWorkflowCommand(argc, argv))
+    {
+        return thiran::v0::tooling::runWorkflowCli(argc, argv);
     }
     const auto compilationStart = std::chrono::steady_clock::now();
     CommandLine command{DriverMode::Normal, {}, {}};

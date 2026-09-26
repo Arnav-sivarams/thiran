@@ -495,6 +495,24 @@ void bundleMatrix(const fs::path& root, const Lifecycle& life) {
     require(model::inspectModelBundle(*loaded.bundle).find("backend.cpu=available") != std::string::npos &&
             model::inspectModelBundle(*loaded.bundle).find("backend.gpu=unavailable") != std::string::npos,
             "bundle inspection omitted backend availability");
+    auto primaryInspect = tooling::runProcess({TH022_CLI,
+        {"model", "inspect", bundlePath.string()}});
+    auto primaryRun = tooling::runProcess({TH022_CLI,
+        {"model", "run", bundlePath.string(), "--backend", "cpu", "--input", "2", "--verbose"}});
+    auto primaryMissing = tooling::runProcess({TH022_CLI,
+        {"model", "inspect", (root / "missing-model.thm").string()}});
+    auto primaryUnavailable = tooling::runProcess({TH022_CLI,
+        {"model", "run", bundlePath.string(), "--backend", "gpu", "--input", "2"}});
+    require(primaryInspect.exitStatus == 0 &&
+            primaryInspect.standardOutput.find("backend.cpu=available") != std::string::npos &&
+            primaryRun.exitStatus == 0 &&
+            primaryRun.standardError.find("compiler_invocations=0") != std::string::npos &&
+            primaryRun.standardError.find("fallback=NONE") != std::string::npos &&
+            primaryMissing.exitStatus != 0 &&
+            primaryMissing.standardError.find("cannot load model") != std::string::npos &&
+            primaryUnavailable.exitStatus != 0 &&
+            primaryUnavailable.standardError.find("MODEL-BACKEND-UNAVAILABLE") != std::string::npos,
+            "primary CLI model workflow failed");
 
     for (float input : {0.0f, 1.0f, 2.0f, 5.0f}) {
         auto reference = model::evaluateReferenceAffine(life.module, life.plan, *life.restored.state, input);
@@ -558,6 +576,11 @@ void bundleMatrix(const fs::path& root, const Lifecycle& life) {
     const auto valid = readBytes(bundlePath);
     auto bytes = valid; bytes[0] ^= std::byte{1}; writeBytes(root / "bundle-magic.thm", bytes);
     require(model::loadModelBundle(root / "bundle-magic.thm").error->code == "MODEL-MAGIC", "bad bundle magic accepted");
+    auto primaryMalformed = tooling::runProcess({TH022_CLI,
+        {"model", "inspect", (root / "bundle-magic.thm").string()}});
+    require(primaryMalformed.exitStatus != 0 &&
+            primaryMalformed.standardError.find("MODEL-MAGIC") != std::string::npos,
+            "primary CLI accepted malformed model bundle");
     bytes = valid; putU32(bytes, 8, 99); writeBytes(root / "bundle-version.thm", bytes);
     require(model::loadModelBundle(root / "bundle-version.thm").error->code == "MODEL-FORMAT-VERSION", "bad bundle version accepted");
     bytes = valid; putU32(bytes, 12, 99); writeBytes(root / "bundle-abi.thm", bytes);
