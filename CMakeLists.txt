@@ -416,6 +416,29 @@ if(BUILD_TESTING)
     add_dependencies(v0_workflow_cli_tests Thiran th021_research_extension
         th021_bad_abi_extension th021_malformed_extension th021_duplicate_op_extension)
 
+    add_executable(th023_qualification
+        benchmarks/th023/Qualification.cpp
+        benchmarks/th023/CppBaseline.cpp)
+    target_include_directories(th023_qualification PRIVATE benchmarks/th023)
+    target_link_libraries(th023_qualification PRIVATE
+        thiran_v0_reference_model thiran_v0_tooling)
+    target_compile_definitions(th023_qualification PRIVATE
+        TH023_CXX="${CMAKE_CXX_COMPILER}"
+        TH023_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH023_BUILD="${CMAKE_BINARY_DIR}"
+        TH023_EXTENSION="$<TARGET_FILE:th021_research_extension>")
+    target_compile_options(th023_qualification PRIVATE
+        -O3 -DNDEBUG -fno-fast-math -ffp-contract=off)
+    add_dependencies(th023_qualification th021_research_extension)
+
+    add_executable(th023_structure_tests tests/performance/Th023StructureTests.cpp)
+    target_link_libraries(th023_structure_tests PRIVATE
+        thiran_v0_native_cpu thiran_v0_native_gpu thiran_v0_extension)
+    target_compile_definitions(th023_structure_tests PRIVATE
+        TH023_EXTENSION="$<TARGET_FILE:th021_research_extension>")
+    add_dependencies(th023_structure_tests th021_research_extension)
+    add_test(NAME TH023StructureTests COMMAND th023_structure_tests)
+
     if(THIRAN_ENABLE_NATIVE_GPU)
         add_executable(v0_workflow_gpu_cli_tests tests/tooling/v0/WorkflowGpuCliTests.cpp)
         target_link_libraries(v0_workflow_gpu_cli_tests PRIVATE thiran_v0_process)

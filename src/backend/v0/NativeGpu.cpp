@@ -321,6 +321,7 @@ DeviceAllocationPtr allocate(Driver& driver, Context& context, std::size_t bytes
     if (bytes != 0) {
         driver.check(driver.cuMemAlloc(&allocation->pointer, bytes), "cuMemAlloc");
         ++evidence.allocationCount;
+        evidence.allocationBytesRequested += bytes;
     }
     return allocation;
 }
@@ -671,6 +672,7 @@ void copyToDevice(Driver& driver, Context& context, Stream& stream,
     driver.check(driver.cuMemcpyHtoDAsync(allocation->pointer, source, count, stream.get()),
                  "cuMemcpyHtoDAsync");
     ++evidence.hostToDeviceCopies;
+    evidence.hostToDeviceBytes += count;
     ++evidence.streamSubmissions;
 }
 
@@ -684,6 +686,7 @@ void copyFromDevice(Driver& driver, Context& context, Stream& stream, void* dest
     driver.check(driver.cuMemcpyDtoHAsync(destination, allocation->pointer, count, stream.get()),
                  "cuMemcpyDtoHAsync");
     ++evidence.deviceToHostCopies;
+    evidence.deviceToHostBytes += count;
     ++evidence.streamSubmissions;
 }
 
@@ -776,6 +779,7 @@ void copyDevice(Driver& driver, Context& context, Stream& stream,
                                          input.allocation->bytes, stream.get()),
                  "cuMemcpyDtoDAsync");
     ++evidence.deviceToDeviceCopies;
+    evidence.deviceToDeviceBytes += input.allocation->bytes;
     ++evidence.streamSubmissions;
 }
 
@@ -870,6 +874,8 @@ struct NativeGpuPendingState {
           module(driver, context, selectedPtx ? std::move(*selectedPtx) : plannedPtx(region, plan)),
           completion(driver, context) {
         evidence.device = initializedDevice;
+        evidence.moduleLoads = 1;
+        evidence.driverJitLoads = 1;
         evidence.logicalTensorValues = plan.values.size();
         evidence.physicalSlots = plan.slots.size();
         evidence.fusionGroups = plan.fusionGroups.size();
@@ -1010,6 +1016,7 @@ struct NativeGpuPendingState {
                                 scalar.allocation->pointer, width, stream.get()),
                                 "cuMemcpyDtoDAsync(tensor-literal)");
                             ++evidence.deviceToDeviceCopies;
+                            evidence.deviceToDeviceBytes += width;
                             ++evidence.streamSubmissions;
                         }
                     }
@@ -1171,6 +1178,8 @@ struct NativeGpuKernelPendingState {
           stream(driver, context), module(driver, context, request.ptx),
           completion(driver, context) {
         evidence.device = initializedDevice;
+        evidence.moduleLoads = 1;
+        evidence.driverJitLoads = 1;
     }
 
     void submitWork() {

@@ -52,9 +52,15 @@ using GpuValue = std::variant<std::int64_t, float, storage::Tensor>;
 struct GpuExecutionEvidence {
     GpuDeviceInfo device;
     std::uint64_t allocationCount = 0;
+    std::uint64_t allocationBytesRequested = 0;
     std::uint64_t hostToDeviceCopies = 0;
+    std::uint64_t hostToDeviceBytes = 0;
     std::uint64_t deviceToHostCopies = 0;
+    std::uint64_t deviceToHostBytes = 0;
     std::uint64_t deviceToDeviceCopies = 0;
+    std::uint64_t deviceToDeviceBytes = 0;
+    std::uint64_t moduleLoads = 0;
+    std::uint64_t driverJitLoads = 0;
     std::uint64_t inputStorageUploads = 0;
     std::uint64_t resultDownloads = 0;
     std::uint64_t kernelLaunches = 0;
