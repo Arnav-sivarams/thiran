@@ -65,13 +65,14 @@ std::string opName(Op op) {
         case Op::Transpose: return "transpose_view"; case Op::Sum: return "sum";
         case Op::StopGradient: return "stop_gradient"; case Op::ZeroLike: return "zero_like";
         case Op::ReduceToShape: return "reduce_to_shape"; case Op::BroadcastToShape: return "broadcast_to_shape";
-        case Op::Call: return "call";
+        case Op::Extension: return "extension"; case Op::Call: return "call";
     }
     return "invalid";
 }
 std::string checkName(CheckKind k) {
     switch (k) { case CheckKind::Bounds: return "bounds"; case CheckKind::Broadcast: return "broadcast";
-        case CheckKind::MatmulShape: return "matmul_shape"; case CheckKind::Slice: return "slice"; }
+        case CheckKind::MatmulShape: return "matmul_shape"; case CheckKind::Slice: return "slice";
+        case CheckKind::ExtensionShape: return "extension_shape"; }
     return "invalid";
 }
 void ids(std::ostringstream& out, const std::vector<ValueId>& values) {
@@ -96,6 +97,8 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             if (i->floating) out << " value=" << *i->floating << 'f';
             if (i->boolean) out << " value=" << (*i->boolean ? "true" : "false");
             if (i->op == Op::Call) out << " @" << i->callee;
+            if (i->op == Op::Extension && i->extensionOperation)
+                out << " " << i->extensionOperation->canonicalIdentity << " digest=" << i->extensionOperation->descriptorDigest;
             if (i->op == Op::LoadBinding || i->op == Op::Move || i->op == Op::MutableBorrow) out << " $" << i->binding;
             if (i->op == Op::Call && !i->argumentAccess.empty()) {
                 out << " access=[";
@@ -110,7 +113,8 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             if (!i->shape.extents.empty()) {
                 out << " shape=[";
                 for (std::size_t d = 0; d < i->shape.extents.size(); ++d) {
-                    if (d) out << ','; if (i->shape.extents[d]) out << *i->shape.extents[d]; else out << '?';
+                    if (d) out << ',';
+                    if (i->shape.extents[d]) out << *i->shape.extents[d]; else out << '?';
                 }
                 out << ']';
             }
@@ -122,7 +126,8 @@ void block(std::ostringstream& out, const Block& b, std::string indent="  ") {
             out << indent << (w->declaration?"declare ":"rebind ") << '$' << w->binding << "=%" << w->value << '\n';
         } else if (const auto* f=std::get_if<Flow>(&step)) {
             out << indent << (f->kind==Flow::Kind::Return?"return":f->kind==Flow::Kind::Break?"break":"continue");
-            if (f->value) out << " %" << *f->value; out << '\n';
+            if (f->value) out << " %" << *f->value;
+            out << '\n';
         } else {
             const auto& s=std::get<Structured>(step);
             if (s.kind==Structured::Kind::If) {

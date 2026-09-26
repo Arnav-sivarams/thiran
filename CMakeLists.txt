@@ -76,6 +76,7 @@ list(FILTER CORE_SOURCES EXCLUDE REGEX "/artifact/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/persistence/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/model/v0/")
 list(FILTER CORE_SOURCES EXCLUDE REGEX "/graphics/v0/")
+list(FILTER CORE_SOURCES EXCLUDE REGEX "/extension/v0/")
 
 add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Diagnostic.cpp
@@ -83,12 +84,16 @@ add_library(thiran_v0_frontend STATIC
     src/frontend/v0/Ast.cpp
     src/frontend/v0/Parser.cpp)
 
+add_library(thiran_v0_extension STATIC src/extension/v0/Extension.cpp)
+target_link_libraries(thiran_v0_extension PRIVATE ${CMAKE_DL_LIBS})
+
 add_library(thiran_v0_semantic STATIC
     src/semantic/v0/Ir.cpp
     src/semantic/v0/Analyzer.cpp
     src/semantic/v0/Verifier.cpp
     src/semantic/v0/Evaluator.cpp)
 target_link_libraries(thiran_v0_semantic PUBLIC thiran_v0_frontend)
+target_link_libraries(thiran_v0_semantic PUBLIC thiran_v0_extension)
 
 add_library(thiran_v0_analysis STATIC src/analysis/v0/Ownership.cpp)
 target_link_libraries(thiran_v0_analysis PUBLIC thiran_v0_semantic)
@@ -274,6 +279,20 @@ if(BUILD_TESTING)
     add_test(NAME V0ModelDeploymentTests COMMAND v0_model_deployment_tests)
 
     if(THIRAN_ENABLE_NATIVE_GPU)
+        add_executable(v0_extension_gpu_integration_tests
+            tests/extension/v0/ExtensionGpuIntegrationTests.cpp)
+        target_link_libraries(v0_extension_gpu_integration_tests PRIVATE
+            thiran_v0_artifact thiran_v0_process)
+        target_compile_definitions(v0_extension_gpu_integration_tests PRIVATE
+            TH021_CXX="${CMAKE_CXX_COMPILER}"
+            TH021_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+            TH021_BUILD="${CMAKE_BINARY_DIR}"
+            TH021_EXTENSION="$<TARGET_FILE:th021_research_extension>"
+            TH021_RUNTIME="$<TARGET_FILE:th021_extension_artifact_runner>")
+        add_dependencies(v0_extension_gpu_integration_tests th021_research_extension th021_extension_artifact_runner)
+        add_test(NAME V0ExtensionGpuIntegrationTests COMMAND v0_extension_gpu_integration_tests)
+        set_tests_properties(V0ExtensionGpuIntegrationTests PROPERTIES SKIP_RETURN_CODE 77)
+
         add_executable(v0_graphics_gpu_integration_tests
             tests/graphics/v0/GraphicsGpuIntegrationTests.cpp)
         target_link_libraries(v0_graphics_gpu_integration_tests PRIVATE thiran_v0_graphics)
@@ -333,6 +352,45 @@ if(BUILD_TESTING)
         TH009_CLI="$<TARGET_FILE:thiran-v0>")
     add_dependencies(v0_tooling_tests thiran-v0)
     add_test(NAME V0ToolingTests COMMAND v0_tooling_tests)
+
+    add_library(th021_research_extension SHARED
+        tests/fixtures/extensions/research_ops/ResearchOps.cpp)
+    target_include_directories(th021_research_extension PRIVATE "${CMAKE_SOURCE_DIR}/include")
+    set_target_properties(th021_research_extension PROPERTIES PREFIX "")
+    foreach(kind IN ITEMS no_entry bad_abi malformed init_fail zero_ops)
+        add_library(th021_${kind}_extension SHARED
+            tests/fixtures/extensions/research_ops/FailureExtension.cpp)
+        target_include_directories(th021_${kind}_extension PRIVATE "${CMAKE_SOURCE_DIR}/include")
+        set_target_properties(th021_${kind}_extension PROPERTIES PREFIX "")
+    endforeach()
+    target_compile_definitions(th021_no_entry_extension PRIVATE TH021_NO_ENTRY=1)
+    target_compile_definitions(th021_malformed_extension PRIVATE TH021_MALFORMED=1)
+    target_compile_definitions(th021_init_fail_extension PRIVATE TH021_INIT_FAIL=1)
+    target_compile_definitions(th021_zero_ops_extension PRIVATE TH021_ZERO_OPS=1)
+
+    add_executable(th021_extension_artifact_runner
+        tests/extension/v0/ExtensionArtifactRunner.cpp)
+    target_link_libraries(th021_extension_artifact_runner PRIVATE thiran_v0_artifact)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(th021_extension_artifact_runner PRIVATE -Wl,--gc-sections)
+    endif()
+
+    add_executable(v0_extension_tests tests/extension/v0/ExtensionTests.cpp)
+    target_link_libraries(v0_extension_tests PRIVATE thiran_v0_artifact thiran_v0_autodiff thiran_v0_process)
+    target_compile_definitions(v0_extension_tests PRIVATE
+        TH021_CXX="${CMAKE_CXX_COMPILER}"
+        TH021_INCLUDE="${CMAKE_SOURCE_DIR}/include"
+        TH021_BUILD="${CMAKE_BINARY_DIR}"
+        TH021_RUNTIME="$<TARGET_FILE:th021_extension_artifact_runner>"
+        TH021_EXTENSION="$<TARGET_FILE:th021_research_extension>"
+        TH021_NO_ENTRY="$<TARGET_FILE:th021_no_entry_extension>"
+        TH021_BAD_ABI="$<TARGET_FILE:th021_bad_abi_extension>"
+        TH021_MALFORMED="$<TARGET_FILE:th021_malformed_extension>"
+        TH021_INIT_FAIL="$<TARGET_FILE:th021_init_fail_extension>"
+        TH021_ZERO_OPS="$<TARGET_FILE:th021_zero_ops_extension>")
+    add_dependencies(v0_extension_tests th021_extension_artifact_runner th021_research_extension th021_no_entry_extension
+        th021_bad_abi_extension th021_malformed_extension th021_init_fail_extension th021_zero_ops_extension)
+    add_test(NAME V0ExtensionTests COMMAND v0_extension_tests)
 
 if(NOT THIRAN_V0_ONLY_TESTING)
     add_executable(rewrite_regression_tests tests/optimizer/RewriteRegressionTests.cpp)

@@ -1,5 +1,10 @@
 # Thiran architecture
 
+Research numerical extensions are an explicit compiler input described in
+`spec/RESEARCH_EXTENSIONS_V0.md`. A frozen registry resolves ordinary calls to
+owned, validated scalar recipes; semantic IR and TensorRegion remain
+self-describing, and deployed TH-016 payloads do not load the compiler plugin.
+
 ## Current pipeline
 
 ```text

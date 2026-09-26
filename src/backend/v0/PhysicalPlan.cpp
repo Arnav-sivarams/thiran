@@ -14,12 +14,17 @@ bool tensor(const semantic::Type& type) {
     return type.kind == semantic::TypeKind::Tensor && type.elements.size() == 1;
 }
 
-bool elementwise(RegionOp op) {
-    return op == RegionOp::Negate || op == RegionOp::Add ||
-           op == RegionOp::Subtract || op == RegionOp::ElementMultiply;
+bool elementwise(const RegionNode& node) {
+    if (node.op == RegionOp::Negate || node.op == RegionOp::Add ||
+        node.op == RegionOp::Subtract || node.op == RegionOp::ElementMultiply) return true;
+    return node.op==RegionOp::Extension;
+}
+bool fusible(const RegionNode& node) {
+    return node.op!=RegionOp::Extension || (node.extensionOperation && node.extensionOperation->fusible &&
+        node.extensionOperation->effect==extension::EffectV0::Pure);
 }
 
-bool kernelOp(RegionOp op) { return elementwise(op) || op == RegionOp::Index; }
+bool kernelOp(const RegionNode& node) { return elementwise(node) || node.op == RegionOp::Index; }
 
 std::string deviceName(PhysicalDevice device) {
     return device == PhysicalDevice::Host ? "host" : "gpu";
@@ -176,12 +181,12 @@ std::vector<FusionGroup> makeFusionGroups(const TensorRegion& region,
     };
     std::vector<FusionGroup> groups;
     for (const auto& current : region.nodes) {
-        if (!kernelOp(current.op)) continue;
+        if (!kernelOp(current)) continue;
         bool extend = false;
-        if (options.enableFusion && elementwise(current.op) && !groups.empty()) {
+        if (options.enableFusion && elementwise(current) && fusible(current) && !groups.empty()) {
             auto& prior = groups.back();
             const auto* tail = node(region, prior.nodes.back());
-            if (tail && elementwise(tail->op) && !protectedRoot(current.id) &&
+            if (tail && elementwise(*tail) && fusible(*tail) && !protectedRoot(current.id) &&
                 !protectedRoot(tail->id) && canonicalAlias(region, region.output) != tail->id &&
                 tail->type == current.type && tail->shape == current.shape) {
                 const auto use = uses.find(tail->id);
@@ -530,13 +535,13 @@ PhysicalPlanVerification verifyPhysicalPlan(const TensorRegion& region,
         if (group.output != group.nodes.back())
             addError(result, "FPV03", "fusion output is not the ordered terminal node");
         for (auto id : group.nodes)
-            if (!grouped.insert(id).second || !node(region, id) || !kernelOp(node(region, id)->op))
+            if (!grouped.insert(id).second || !node(region, id) || !kernelOp(*node(region, id)))
                 addError(result, "FPV04", "fusion group duplicates or references an ineligible node");
         if (group.fused != (group.nodes.size() > 1))
             addError(result, "FPV05", "fusion marker contradicts group size");
     }
     for (const auto& current : region.nodes)
-        if (kernelOp(current.op) && !grouped.contains(current.id))
+        if (kernelOp(current) && !grouped.contains(current.id))
             addError(result, "FPV06", "kernel node is missing from fusion plan");
 
     const auto fused = fusedIntermediates(plan.fusionGroups);

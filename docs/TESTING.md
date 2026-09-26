@@ -160,6 +160,20 @@ an observed color Tensor into existing native GPU numerical execution. The
 test records the explicit graphics D2H and later numerical H2D boundary; it is
 not zero-copy evidence.
 
+TH-021 research-extension qualification adds:
+
+```bash
+./build/debug/v0_extension_tests
+./build/gpu/v0_extension_gpu_integration_tests
+```
+
+The first builds and explicitly loads an out-of-core shared library, checks
+registry/descriptor failures, reference and AD behavior, CPU AOT/JIT, planning,
+fusion, structured composition, and plugin-free fresh-process CPU artifact
+execution. The second requires physical CUDA access (77 means unavailable) and
+checks native GPU, persistent PTX AOT, GPU JIT/cache identity, zero-size and
+invalid-device behavior, and plugin-free physical fresh-process execution.
+
 ## Numerical equivalence
 
 `RegionExecutionTests` and `RegionRuntimeCliTests` construct deterministic tensors, compare Region-controlled execution with whole-Graph PyTorch, check output keys/shapes/dtypes, and use `torch.testing.assert_close` with fixed tolerances. Do not replace these with uncontrolled random inputs.

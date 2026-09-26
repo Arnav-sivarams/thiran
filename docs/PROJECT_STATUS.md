@@ -1,5 +1,9 @@
 # Project status
 
+TH-021 custom numerical research operations are implemented through the
+explicit frozen V0 extension registry. The surface is intentionally limited to
+compiler-owned elementwise recipes and is not a general plugin architecture.
+
 Status terms describe repository evidence, not intent.
 
 | Area | Status | Evidence | Limitation | Next research step |

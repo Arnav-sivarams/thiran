@@ -1,6 +1,7 @@
 #include "backend/v0/NativeCpu.hpp"
 
 #include <algorithm>
+#include <iomanip>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -16,9 +17,10 @@ bool tensorNumeric(const semantic::Type& type) {
            (i64(type.elements[0]) || f32(type.elements[0])) && (type.rank == 1 || type.rank == 2);
 }
 bool tensorI64(const semantic::Type& type) { return tensorNumeric(type) && i64(type.elements[0]); }
-bool elementwise(RegionOp op) {
-    return op == RegionOp::Negate || op == RegionOp::Add ||
-           op == RegionOp::Subtract || op == RegionOp::ElementMultiply;
+bool elementwise(const RegionNode& node) {
+    return node.op == RegionOp::Negate || node.op == RegionOp::Add ||
+           node.op == RegionOp::Subtract || node.op == RegionOp::ElementMultiply ||
+           node.op == RegionOp::Extension;
 }
 std::string v(semantic::ValueId id) { return "v" + std::to_string(id); }
 std::string data(semantic::ValueId id) { return "data_v" + std::to_string(id); }
@@ -90,7 +92,7 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
         const bool typeSupported = i64(node.type) || f32(node.type) || tensorNumeric(node.type);
         const bool opSupported = node.op == RegionOp::Input || node.op == RegionOp::Integer ||
             node.op == RegionOp::Float || node.op == RegionOp::TensorLiteral ||
-            node.op == RegionOp::Alias || node.op == RegionOp::Copy || elementwise(node.op) ||
+            node.op == RegionOp::Alias || node.op == RegionOp::Copy || elementwise(node) ||
             node.op == RegionOp::Index;
         if (!typeSupported || !opSupported)
             throw std::invalid_argument("BACKEND-UNSUPPORTED: region is outside native CPU emission subset");
@@ -123,6 +125,9 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
            "static std::int64_t checked_neg(std::int64_t a) {\n"
            "  if (a == std::numeric_limits<std::int64_t>::min()) throw SemanticFailure{\"TH-SPEC-I64-OVERFLOW\"};\n"
            "  return -a;\n}\n"
+           "static float checked_div_f32(float a, float b) {\n"
+           "  if (b == 0.0f) throw SemanticFailure{\"TH021-DIVIDE-BY-ZERO\"};\n"
+           "  return a / b;\n}\n"
            "static std::size_t checked_flat_index(const std::vector<std::uint64_t>& shape,\n"
            "                                      const std::vector<std::int64_t>& coords) {\n"
            "  if (shape.size() != coords.size()) throw SemanticFailure{\"TH-SPEC-BOUNDS\"};\n"
@@ -210,7 +215,7 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
                 << ", " << valueList(node.indices) << ")];\n";
             continue;
         }
-        if (!elementwise(node.op)) continue;
+        if (!elementwise(node)) continue;
         const auto* group = plan.groupFor(node.id);
         if (!group || group->nodes.front() != node.id || !emittedGroups.insert(group->id).second) continue;
         const auto& terminal = findNode(region, group->output);
@@ -233,9 +238,10 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
                     id = findNode(region, id).dependencies.front();
                 }
             };
-            out << "  if (" << shapeName(shapeOperand(operation.dependencies[0])) << " != "
-                << shapeName(shapeOperand(operation.dependencies[1])) << ")\n"
-                << "    throw std::runtime_error(\"BACKEND-UNSUPPORTED: runtime unequal-shape elementwise operation\");\n";
+            for (std::size_t dependency=1;dependency<operation.dependencies.size();++dependency)
+                out << "  if (" << shapeName(shapeOperand(operation.dependencies[0])) << " != "
+                    << shapeName(shapeOperand(operation.dependencies[dependency])) << ")\n"
+                    << "    throw std::runtime_error(\"BACKEND-UNSUPPORTED: runtime unequal-shape elementwise operation\");\n";
         }
         out << "  auto " << shapeName(terminal.id) << " = " << shapeName(shapeSource) << ";\n"
             << "  auto& " << data(terminal.id) << " = " << slotName(*terminalPlan->slot) << ";\n"
@@ -249,6 +255,30 @@ std::string emit(const TensorRegion& region, bool standalone, std::string_view t
                 id = canonicalAlias(region, id);
                 return emittedInside.contains(id) ? element(id) : data(id) + "[k]";
             };
+            if (operation.op==RegionOp::Extension) {
+                const auto& recipe=operation.extensionOperation->forward;
+                const auto prefix="extension_v"+std::to_string(operation.id)+"_n";
+                for (std::size_t recipeIndex=0;recipeIndex<recipe.nodes.size();++recipeIndex) {
+                    const auto& recipeNode=recipe.nodes[recipeIndex];
+                    out << "    volatile float " << prefix << recipeIndex << " = ";
+                    auto value=[&](std::uint32_t index){return prefix+std::to_string(index);};
+                    switch (recipeNode.opcode) {
+                    case extension::ScalarOpcode::Input: out << operand(operation.dependencies.at(recipeNode.input)); break;
+                    case extension::ScalarOpcode::ConstantF32:
+                        out << std::setprecision(std::numeric_limits<float>::max_digits10) << recipeNode.constant << "f"; break;
+                    case extension::ScalarOpcode::Add: out << value(recipeNode.left) << " + " << value(recipeNode.right); break;
+                    case extension::ScalarOpcode::Subtract: out << value(recipeNode.left) << " - " << value(recipeNode.right); break;
+                    case extension::ScalarOpcode::Multiply: out << value(recipeNode.left) << " * " << value(recipeNode.right); break;
+                    case extension::ScalarOpcode::Divide:
+                        out << "checked_div_f32(" << value(recipeNode.left) << ',' << value(recipeNode.right) << ')'; break;
+                    case extension::ScalarOpcode::Negate: out << '-' << value(recipeNode.left); break;
+                    }
+                    out << ";\n";
+                }
+                out << "    volatile float " << element(operation.id) << " = " << prefix << recipe.root << ";\n";
+                emittedInside.insert(operation.id);
+                continue;
+            }
             out << "    " << (tensorI64(operation.type) ? "std::int64_t" : "volatile float")
                 << ' ' << element(operation.id) << " = ";
             if (tensorI64(operation.type)) {

@@ -34,7 +34,7 @@ bool eligibleOp(Op op) {
         case Op::Integer: case Op::Float: case Op::Boolean: case Op::LoadBinding:
         case Op::Negate: case Op::Add: case Op::Subtract: case Op::Multiply:
         case Op::ElementMultiply: case Op::Matmul: case Op::Transpose: case Op::Sum:
-        case Op::StopGradient: return true;
+        case Op::StopGradient: case Op::Extension: return true;
         default: return false;
     }
 }
@@ -61,6 +61,10 @@ struct Builder {
         auto id=next++,b=binding++;
         fn.parameters.push_back({id,std::move(name),type,shape,span,b,AccessMode::Read});
         return id;
+    }
+    ValueId constant(float value) {
+        Instruction i; i.id=next++; i.op=Op::Float; i.type=scalar(TypeKind::F32); i.span=span;
+        i.floating=value; fn.body.steps.emplace_back(std::move(i)); return next-1;
     }
 };
 }
@@ -104,8 +108,11 @@ DifferentiationResult differentiate(const semantic::Module& source,const analysi
                     "structured control-flow AD is deferred");
         else if (const auto* w=std::get_if<BindingWrite>(&step); w && !w->declaration)
             diagnostic(result,"AD-ELIGIBILITY-MUTATION","rebinding/mutation AD is deferred");
-        else if (const auto* i=std::get_if<Instruction>(&step); i && !eligibleOp(i->op))
-            diagnostic(result,"AD-ELIGIBILITY-OP",opName(i->op)+" differentiation is deferred");
+        else if (const auto* i=std::get_if<Instruction>(&step)) {
+            if (!eligibleOp(i->op)) diagnostic(result,"AD-ELIGIBILITY-OP",opName(i->op)+" differentiation is deferred");
+            else if (i->op==Op::Extension && (!i->extensionOperation || !i->extensionOperation->derivative))
+                diagnostic(result,"AD-ELIGIBILITY-EXTENSION","research operation has no declared reverse derivative");
+        }
     }
     if (!result.diagnostics.empty()) return result;
     const auto pf=facts(*primal);
@@ -125,6 +132,12 @@ DifferentiationResult differentiate(const semantic::Module& source,const analysi
             save(i->operands[0],"broadcast reduction shape reference"); save(i->operands[1],"broadcast reduction shape reference");
         }
         if (i->op==Op::Sum && !i->operands.empty()) save(i->operands[0],"Sum broadcast shape reference");
+        if (i->op==Op::Extension && i->extensionOperation && i->extensionOperation->derivative) {
+            const auto& derivative=*i->extensionOperation->derivative;
+            for (std::size_t k=0;k<i->operands.size();++k)
+                if (derivative.savedInputs&(1ULL<<k)) save(i->operands[k],"research derivative saved primal input");
+            if (derivative.savesOutput) save(i->id,"research derivative saved primal output");
+        }
     }
     auto provenance=ownership.valueProvenance.find(primal->id);
     for (const auto& [id,why]:reasons) {
@@ -215,6 +228,46 @@ DifferentiationResult differentiate(const semantic::Module& source,const analysi
             case Op::Transpose: addContribution(i->operands[0],emit(Op::Transpose,pf.at(i->operands[0]),{dz},EffectClass::Pure,true)); break;
             case Op::Sum: addContribution(i->operands[0],b.emit(Op::BroadcastToShape,pf.at(i->operands[0]).type,pf.at(i->operands[0]).shape,
                 {dz,savedParam.at(i->operands[0])},i->axis,EffectClass::CheckedFailure)); break;
+            case Op::Extension: {
+                const auto& operation=*i->extensionOperation;
+                const auto& derivative=*operation.derivative;
+                std::vector<std::pair<ValueId,PrimalFact>> recipeInputs;
+                for (auto operand:i->operands) recipeInputs.push_back({savedParam.contains(operand)?savedParam.at(operand):0,pf.at(operand)});
+                recipeInputs.push_back({savedParam.contains(i->id)?savedParam.at(i->id):0,pf.at(i->id)});
+                recipeInputs.push_back({dz,pf.at(i->id)});
+                for (std::size_t operandIndex=0;operandIndex<i->operands.size();++operandIndex) {
+                    if (!(derivative.differentiableInputs&(1ULL<<operandIndex))) continue;
+                    const auto& recipe=derivative.gradients[operandIndex];
+                    std::vector<std::pair<ValueId,PrimalFact>> nodes;
+                    for (const auto& node:recipe.nodes) {
+                        if (node.opcode==extension::ScalarOpcode::Input) {
+                            if (!recipeInputs.at(node.input).first) { diagnostic(result,"ADV11","derivative references unavailable saved value"); return result; }
+                            nodes.push_back(recipeInputs.at(node.input));
+                        } else if (node.opcode==extension::ScalarOpcode::ConstantF32) {
+                            nodes.push_back({b.constant(node.constant),{scalar(TypeKind::F32),{},i->span}});
+                        } else {
+                            auto left=nodes.at(node.left);
+                            if (node.opcode==extension::ScalarOpcode::Negate) {
+                                nodes.push_back({b.emit(Op::Negate,left.second.type,left.second.shape,{left.first}),left.second});
+                                continue;
+                            }
+                            auto right=nodes.at(node.right);
+                            PrimalFact resultFact=tensor(left.second.type)?left.second:right.second;
+                            Op op=node.opcode==extension::ScalarOpcode::Add?Op::Add:
+                                node.opcode==extension::ScalarOpcode::Subtract?Op::Subtract:
+                                (tensor(left.second.type)||tensor(right.second.type)?Op::ElementMultiply:Op::Multiply);
+                            nodes.push_back({b.emit(op,resultFact.type,resultFact.shape,{left.first,right.first}),resultFact});
+                        }
+                    }
+                    auto gradient=nodes.at(recipe.root);
+                    if (gradient.second.type!=pf.at(i->operands[operandIndex]).type ||
+                        gradient.second.shape!=pf.at(i->operands[operandIndex]).shape) {
+                        diagnostic(result,"ADV12","custom derivative gradient type/rank/shape mismatch"); return result;
+                    }
+                    addContribution(i->operands[operandIndex],gradient.first);
+                }
+                break;
+            }
             case Op::StopGradient: break;
             default: break;
         }

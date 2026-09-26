@@ -51,7 +51,8 @@ ShapeFact unknownShape(const Type& t) {
 }
 class Analyzer {
 public:
-    explicit Analyzer(const thiran::v0::Module& syntax) : syntax_(syntax) {
+    explicit Analyzer(const thiran::v0::Module& syntax, const extension::ExtensionRegistry* extensions=nullptr)
+        : syntax_(syntax), extensions_(extensions) {
         result_.source = syntax.source; result_.span = syntax.span;
     }
     Module run() {
@@ -102,6 +103,7 @@ private:
         std::uint32_t loopDepth;
     };
     const thiran::v0::Module& syntax_;
+    const extension::ExtensionRegistry* extensions_ = nullptr;
     Module result_;
     std::map<std::string, FunctionId> names_;
     std::vector<const FunctionDecl*> declarations_;
@@ -470,6 +472,40 @@ private:
             Instruction i; i.op=Op::StopGradient; i.span=e.span; i.operands={value.id};
             return emit(c,std::move(i),value.fact);
         }
+        // Declared Thiran functions retain normal lexical resolution priority;
+        // extensions fill otherwise-unresolved ordinary call names.
+        if (extensions_ && !names_.contains(name->name)) if (const auto* operation=extensions_->find(name->name)) {
+            if (n.arguments.size()!=operation->arity)
+                fail(e.span,"TH021-ARITY","research operation argument count disagrees with descriptor");
+            Instruction i; i.op=Op::Extension; i.span=e.span; i.extensionOperation=*operation;
+            std::vector<Located> arguments;
+            for (const auto& argument:n.arguments) arguments.push_back(expr(*argument,c));
+            const auto& resultArgument=arguments.at(operation->resultLikeInput);
+            for (std::size_t index=0;index<arguments.size();++index) {
+                const auto& fact=arguments[index].fact;
+                if (fact.type.kind!=TypeKind::Tensor || fact.type.elements.size()!=1 ||
+                    fact.type.elements[0]!=scalar(TypeKind::F32))
+                    fail(n.arguments[index]->span,"TH021-DTYPE","research operations require f32 tensor inputs");
+                if (fact.type.rank<operation->minimumRank || fact.type.rank>operation->maximumRank)
+                    fail(n.arguments[index]->span,"TH021-RANK","research operation tensor rank violates descriptor");
+                if (fact.type!=resultArgument.fact.type)
+                    fail(n.arguments[index]->span,"TH021-TYPE","same-shape research operands require identical tensor types");
+                if (operation->sameShape) {
+                    bool mismatch=false,unknown=false;
+                    for (std::size_t axis=0;axis<fact.shape.extents.size();++axis) {
+                        auto left=fact.shape.extents[axis],right=resultArgument.fact.shape.extents[axis];
+                        mismatch|=left&&right&&left!=right; unknown|=!left||!right;
+                    }
+                    if (mismatch) fail(n.arguments[index]->span,"TH021-SHAPE","known research operation operand shapes disagree");
+                    if (unknown && index!=operation->resultLikeInput)
+                        check(c,CheckKind::ExtensionShape,{resultArgument.id,arguments[index].id},e.span,"TH021-SHAPE");
+                }
+                i.operands.push_back(arguments[index].id);
+                i.argumentAccess.push_back(AccessMode::Read);
+            }
+            i.effect=operation->effect==extension::EffectV0::MayTrap?EffectClass::CheckedFailure:EffectClass::Pure;
+            return emit(c,std::move(i),{resultArgument.fact.type,resultArgument.fact.shape,{}});
+        }
         auto it=names_.find(name->name);
         if (it==names_.end()) fail(e.span,"TH005-UNKNOWN-FUNCTION","unknown function " + name->name);
         auto id=it->second;
@@ -660,6 +696,18 @@ AnalysisResult analyze(const thiran::v0::Module& syntax) {
     try { result.module=Analyzer(syntax).run(); }
     catch (const Failure& failure) { result.diagnostics.push_back(failure.diagnostic); }
     catch (const std::exception& error) { result.diagnostics.push_back({syntax.source,"TH005-INTERNAL",error.what(),syntax.span}); }
+    return result;
+}
+AnalysisResult analyze(const thiran::v0::Module& syntax, extension::ExtensionRegistry& registry) {
+    AnalysisResult result;
+    const auto frozen=registry.freeze();
+    if (!frozen.ok()) {
+        result.diagnostics.push_back({syntax.source,"TH021-REGISTRY",frozen.message,syntax.span});
+        return result;
+    }
+    try { result.module=Analyzer(syntax,&registry).run(); }
+    catch (const Failure& failure) { result.diagnostics.push_back(failure.diagnostic); }
+    catch (const std::exception& error) { result.diagnostics.push_back({syntax.source,"TH021-INTERNAL",error.what(),syntax.span}); }
     return result;
 }
 }

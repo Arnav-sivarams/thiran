@@ -91,6 +91,9 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
             if (c->kind==CheckKind::Broadcast && (i->op==Op::Add || i->op==Op::Subtract ||
                 i->op==Op::Multiply || i->op==Op::ElementMultiply) && i->operands==c->operands) attached=true;
             if (c->kind==CheckKind::MatmulShape && i->op==Op::Matmul && i->operands==c->operands) attached=true;
+            if (c->kind==CheckKind::ExtensionShape && i->op==Op::Extension && c->operands.size()==2 &&
+                std::find(i->operands.begin(),i->operands.end(),c->operands[0])!=i->operands.end() &&
+                std::find(i->operands.begin(),i->operands.end(),c->operands[1])!=i->operands.end()) attached=true;
             if (attached) break;
         }
         if (!attached) err(r,"runtime Check is not attached to dependent operation in its region");
@@ -115,6 +118,9 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                 auto t=operand(0);
                 if (c->operands.size()!=1 || t.kind!=TypeKind::Tensor || c->axis>=t.rank ||
                     c->selectors.size()!=1 || !c->selectors[0].slice || c->failureId!="TH-SPEC-SLICE") err(r,"malformed slice Check");
+            } else if (c->kind==CheckKind::ExtensionShape) {
+                if (c->operands.size()!=2 || operand(0).kind!=TypeKind::Tensor || operand(0)!=operand(1) ||
+                    c->failureId!="TH021-SHAPE") err(r,"malformed extension shape Check");
             } else err(r,"invalid Check kind");
             continue;
         }
@@ -300,6 +306,46 @@ void inspect(const Module& m,const Block& b,const Function* fn,State& state,Veri
                         if (source.extents[sourceAxis] && target.extents[targetAxis] &&
                             *source.extents[sourceAxis]!=*target.extents[targetAxis]) ok=false;
                         ++sourceAxis;
+                    }
+                }
+                require(ok); break;
+            }
+            case Op::Extension: {
+                bool ok=i.extensionOperation.has_value();
+                if (ok) {
+                    const auto& op=*i.extensionOperation;
+                    ok &= !extension::validateOperation(op).has_value() &&
+                        op.descriptorDigest==extension::operationDigest(op) && operands.size()==op.arity &&
+                        op.resultLikeInput<operands.size() && i.argumentAccess.size()==operands.size() &&
+                        i.effect==(op.effect==extension::EffectV0::MayTrap?EffectClass::CheckedFailure:EffectClass::Pure);
+                    if (op.resultLikeInput<operands.size()) {
+                        ok &= i.type==operands[op.resultLikeInput] &&
+                            i.shape==shapes.at(i.operands[op.resultLikeInput]);
+                    }
+                    for (std::size_t k=0;k<operands.size();++k) {
+                        ok &= operands[k].kind==TypeKind::Tensor && operands[k].rank>=op.minimumRank &&
+                            operands[k].rank<=op.maximumRank && operands[k].elements.size()==1 &&
+                            operands[k].elements[0]==scalar(TypeKind::F32) && operands[k]==i.type &&
+                            i.argumentAccess[k]==AccessMode::Read;
+                        if (!ok || k==op.resultLikeInput || i.operands[k]==i.operands[op.resultLikeInput]) continue;
+                        const auto& left=shapes.at(i.operands[op.resultLikeInput]);
+                        const auto& right=shapes.at(i.operands[k]);
+                        bool mismatch=left.extents.size()!=right.extents.size(), unknown=false;
+                        for (std::size_t axis=0;!mismatch && axis<left.extents.size();++axis) {
+                            mismatch|=left.extents[axis]&&right.extents[axis]&&left.extents[axis]!=right.extents[axis];
+                            unknown|=!left.extents[axis]||!right.extents[axis];
+                        }
+                        ok &= !mismatch;
+                        if (unknown) {
+                            bool guarded=false;
+                            for (const auto& candidate:b.steps) {
+                                if (&candidate==&step) break;
+                                if (const auto* check=std::get_if<Check>(&candidate))
+                                    guarded|=check->kind==CheckKind::ExtensionShape && check->operands==
+                                        std::vector<ValueId>{i.operands[op.resultLikeInput],i.operands[k]};
+                            }
+                            ok &= guarded;
+                        }
                     }
                 }
                 require(ok); break;

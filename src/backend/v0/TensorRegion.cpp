@@ -22,6 +22,7 @@ std::string opName(RegionOp op) {
     case RegionOp::Add: return "Add";
     case RegionOp::Subtract: return "Subtract";
     case RegionOp::ElementMultiply: return "ElementMultiply";
+    case RegionOp::Extension: return "Extension";
     case RegionOp::Index: return "Index";
     case RegionOp::Unsupported: return "Unsupported";
     }
@@ -90,6 +91,8 @@ std::string TensorRegion::dump() const {
         for (auto index : node.indices) out << " [v" << index << ']';
         if (node.integer) out << " =" << *node.integer;
         if (node.floating) out << " =" << *node.floating << 'f';
+        if (node.extensionOperation) out << " extension=" << node.extensionOperation->canonicalIdentity
+                                         << " digest=" << node.extensionOperation->descriptorDigest;
         for (const auto& check : node.checks) out << " check=" << check.failureId;
         out << '\n';
     }
@@ -131,6 +134,21 @@ RegionVerification verifyRegion(const TensorRegion& region) {
                 result.errors.push_back("TRV05 elementwise input type mismatch");
             if (lhs && rhs && (knownMismatch(lhs->shape, rhs->shape) || knownMismatch(node.shape, lhs->shape)))
                 result.errors.push_back("TRV06 elementwise known shape mismatch");
+        } else if (node.op == RegionOp::Extension) {
+            bool ok=node.extensionOperation.has_value();
+            if (ok) {
+                const auto& op=*node.extensionOperation;
+                ok &= !extension::validateOperation(op).has_value() &&
+                    op.descriptorDigest==extension::operationDigest(op) && node.dependencies.size()==op.arity &&
+                    op.resultLikeInput<node.dependencies.size() && tensorNumeric(node.type) &&
+                    node.type.rank>=op.minimumRank && node.type.rank<=op.maximumRank &&
+                    node.type.elements[0]==semantic::scalar(semantic::TypeKind::F32);
+                for (auto dependencyId:node.dependencies) {
+                    const RegionNode* input=nullptr; for (const auto& candidate:region.nodes) if (candidate.id==dependencyId) input=&candidate;
+                    ok &= input && input->type==node.type && !knownMismatch(input->shape,node.shape);
+                }
+            }
+            if (!ok) result.errors.push_back("TRV11 malformed extension operation");
         } else if (node.op == RegionOp::Negate) {
             const auto* input = dependency(0);
             if (node.dependencies.size() != 1 || !input || !tensorNumeric(node.type) || input->type != node.type ||
@@ -189,7 +207,12 @@ RegionVerification verifyRegion(const TensorRegion& region) {
                 check.kind == semantic::CheckKind::Bounds && check.failureId == "TH-SPEC-BOUNDS";
             const bool validElementwise = elementwise(node.op) &&
                 check.kind == semantic::CheckKind::Broadcast && check.failureId == "TH-SPEC-BROADCAST";
-            if (!validIndex && !validElementwise)
+            const bool validExtension = node.op==RegionOp::Extension &&
+                check.kind==semantic::CheckKind::ExtensionShape && check.failureId=="TH021-SHAPE" &&
+                check.operands.size()==2 &&
+                std::find(node.dependencies.begin(),node.dependencies.end(),check.operands[0])!=node.dependencies.end() &&
+                std::find(node.dependencies.begin(),node.dependencies.end(),check.operands[1])!=node.dependencies.end();
+            if (!validIndex && !validElementwise && !validExtension)
                 result.errors.push_back("TRV10 malformed attached Check");
         }
         seen.insert(node.id);
@@ -286,7 +309,8 @@ NativeResult extractStrictRegion(const semantic::Module& module,
 
     for (const auto& step : function->body.steps) {
         if (const auto* check = std::get_if<semantic::Check>(&step)) {
-            if (check->kind != semantic::CheckKind::Bounds && check->kind != semantic::CheckKind::Broadcast)
+            if (check->kind != semantic::CheckKind::Bounds && check->kind != semantic::CheckKind::Broadcast &&
+                check->kind != semantic::CheckKind::ExtensionShape)
                 return fail("unsupported ordered Check");
             pending[check->operands.at(0)].push_back(*check);
             continue;
@@ -313,6 +337,7 @@ NativeResult extractStrictRegion(const semantic::Module& module,
         node.shape = instruction.shape;
         node.span = instruction.span;
         node.dependencies = instruction.operands;
+        node.extensionOperation = instruction.extensionOperation;
         auto attachCheck = [&] {
             if (node.dependencies.empty() || !pending.contains(node.dependencies[0])) return;
             node.checks = pending.at(node.dependencies[0]);
@@ -370,6 +395,16 @@ NativeResult extractStrictRegion(const semantic::Module& module,
             if (!admitElementwise(RegionOp::ElementMultiply, "ElementMultiply"))
                 return fail("tensor ElementMultiply not in native subset", "ElementMultiply");
             break;
+        case semantic::Op::Extension: {
+            if (!instruction.extensionOperation) return fail("missing extension descriptor","Extension");
+            const auto& operation=*instruction.extensionOperation;
+            const auto required=target==NativeTarget::Cpu?extension::Cpu:extension::Gpu;
+            if (!(operation.backends&required)) return fail("extension does not support requested backend","Extension");
+            if (instruction.operands.size()!=operation.arity || !tensorNumeric(instruction.type) ||
+                instruction.type.elements[0]!=semantic::scalar(semantic::TypeKind::F32))
+                return fail("extension is outside native elementwise subset","Extension");
+            node.op=RegionOp::Extension; attachCheck(); break;
+        }
         case semantic::Op::Index: {
             const RegionNode* input = nullptr;
             if (!instruction.operands.empty())

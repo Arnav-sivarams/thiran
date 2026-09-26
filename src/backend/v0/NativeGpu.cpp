@@ -1,10 +1,12 @@
 #include "backend/v0/NativeGpu.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <deque>
 #include <dlfcn.h>
 #include <limits>
+#include <iomanip>
 #include <map>
 #include <memory>
 #include <set>
@@ -441,7 +443,7 @@ bool groupElementwise(const TensorRegion& region, const FusionGroup& group) {
     if (group.nodes.empty()) return false;
     const auto op = regionNode(region, group.nodes.front()).op;
     return op == RegionOp::Negate || op == RegionOp::Add ||
-           op == RegionOp::Subtract || op == RegionOp::ElementMultiply;
+           op == RegionOp::Subtract || op == RegionOp::ElementMultiply || op==RegionOp::Extension;
 }
 
 std::vector<semantic::ValueId> groupInputs(const TensorRegion& region, const FusionGroup& group) {
@@ -466,9 +468,16 @@ std::string groupPtx(const TensorRegion& region, const FusionGroup& group) {
     const auto dtype = isF32 ? storage::DType::F32 : storage::DType::I64;
     const auto inputs = groupInputs(region, group);
     std::map<semantic::ValueId, unsigned> registers;
+    std::map<std::pair<semantic::ValueId,std::uint32_t>,unsigned> extensionRegisters;
     unsigned next = isF32 ? 1U : 32U;
     for (auto id : inputs) registers[id] = next++;
     for (auto id : group.nodes) registers[id] = next++;
+    for (auto id:group.nodes) {
+        const auto& operation=regionNode(region,id);
+        if (operation.op==RegionOp::Extension)
+            for (std::uint32_t recipeIndex=0;recipeIndex<operation.extensionOperation->forward.nodes.size();++recipeIndex)
+                extensionRegisters[{id,recipeIndex}]=next++;
+    }
     std::ostringstream out;
     out << ".visible .entry " << groupKernelName(group, dtype) << "(\n .param .u64 out";
     for (std::size_t index = 0; index < inputs.size(); ++index)
@@ -498,6 +507,39 @@ std::string groupPtx(const TensorRegion& region, const FusionGroup& group) {
         const auto left = registerName(operation.dependencies[0]);
         const std::string label = "NOERR_G" + std::to_string(group.id) + "_N" + std::to_string(index);
         if (isF32) {
+            if (operation.op==RegionOp::Extension) {
+                const auto& recipe=operation.extensionOperation->forward;
+                auto recipeRegister=[&](std::uint32_t recipeIndex) {
+                    return "%f"+std::to_string(extensionRegisters.at({operation.id,recipeIndex}));
+                };
+                for (std::uint32_t recipeIndex=0;recipeIndex<recipe.nodes.size();++recipeIndex) {
+                    const auto& recipeNode=recipe.nodes[recipeIndex];
+                    const auto target=recipeRegister(recipeIndex);
+                    switch (recipeNode.opcode) {
+                    case extension::ScalarOpcode::Input:
+                        out << " mov.f32 " << target << ',' << registerName(operation.dependencies.at(recipeNode.input)) << ";\n"; break;
+                    case extension::ScalarOpcode::ConstantF32:
+                        out << " mov.b32 " << target << ",0f" << std::uppercase << std::hex << std::setw(8)
+                            << std::setfill('0') << std::bit_cast<std::uint32_t>(recipeNode.constant) << std::dec << ";\n"; break;
+                    case extension::ScalarOpcode::Add:
+                        out << " add.rn.f32 " << target << ',' << recipeRegister(recipeNode.left) << ',' << recipeRegister(recipeNode.right) << ";\n"; break;
+                    case extension::ScalarOpcode::Subtract:
+                        out << " sub.rn.f32 " << target << ',' << recipeRegister(recipeNode.left) << ',' << recipeRegister(recipeNode.right) << ";\n"; break;
+                    case extension::ScalarOpcode::Multiply:
+                        out << " mul.rn.f32 " << target << ',' << recipeRegister(recipeNode.left) << ',' << recipeRegister(recipeNode.right) << ";\n"; break;
+                    case extension::ScalarOpcode::Divide:
+                        out << " setp.eq.f32 %p3," << recipeRegister(recipeNode.right) << ",0f00000000; @!%p3 bra DIVOK_G"
+                            << group.id << "_N" << index << "_R" << recipeIndex << ";\n"
+                            << " ld.param.u64 %rd15,[error]; mov.u32 %r5,2; atom.global.exch.b32 %r6,[%rd15],%r5;\n"
+                            << "DIVOK_G" << group.id << "_N" << index << "_R" << recipeIndex << ":\n"
+                            << " div.rn.f32 " << target << ',' << recipeRegister(recipeNode.left) << ',' << recipeRegister(recipeNode.right) << ";\n"; break;
+                    case extension::ScalarOpcode::Negate:
+                        out << " neg.f32 " << target << ',' << recipeRegister(recipeNode.left) << ";\n"; break;
+                    }
+                }
+                out << " mov.f32 " << destination << ',' << recipeRegister(recipe.root) << ";\n";
+                continue;
+            }
             if (operation.op == RegionOp::Negate) out << " neg.f32 " << destination << ',' << left << ";\n";
             else {
                 const char* instruction = operation.op == RegionOp::Add ? "add" :
@@ -997,7 +1039,8 @@ struct NativeGpuPendingState {
                 copyDevice(driver, context, stream, input, outputTensor, evidence);
                 values[node.id] = std::move(outputTensor);
             } else if (node.op == RegionOp::Negate || node.op == RegionOp::Add ||
-                       node.op == RegionOp::Subtract || node.op == RegionOp::ElementMultiply) {
+                       node.op == RegionOp::Subtract || node.op == RegionOp::ElementMultiply ||
+                       node.op == RegionOp::Extension) {
                 const auto* group = plan.groupFor(node.id);
                 if (!group || group->nodes.front() != node.id || !executedGroups.insert(group->id).second)
                     continue;
@@ -1008,8 +1051,10 @@ struct NativeGpuPendingState {
                 const auto& input = std::get<DeviceTensor>(values.at(groupInputIds.front()));
                 DeviceTensor outputTensor{input.dtype, input.shape,
                     plannedAllocation(group->output, bytes(input))};
-                if (input.dtype == storage::DType::I64 && storage::checkedElementCount(input.shape) != 0)
-                    ensureErrorBuffer();
+                bool mayTrap=input.dtype==storage::DType::I64;
+                for(auto groupNode:group->nodes){const auto& operation=regionNode(region,groupNode);
+                    mayTrap|=operation.extensionOperation&&operation.extensionOperation->effect==extension::EffectV0::MayTrap;}
+                if (mayTrap && storage::checkedElementCount(input.shape) != 0) ensureErrorBuffer();
                 launchGroup(driver, context, stream, module, region, *group, values,
                             outputTensor, errorAllocation, evidence);
                 values[group->output] = std::move(outputTensor);
@@ -1063,8 +1108,8 @@ struct NativeGpuPendingState {
     void finalizeValue() {
         if (finalized) return;
         if (errorAllocation && errorHost != 0)
-            fail(GpuErrorCategory::SemanticFailure, "TH-SPEC-I64-OVERFLOW",
-                 "checked i64 GPU arithmetic overflow");
+            fail(GpuErrorCategory::SemanticFailure,errorHost==2?"TH021-DIVIDE-BY-ZERO":"TH-SPEC-I64-OVERFLOW",
+                 errorHost==2?"research operation divided by zero":"checked i64 GPU arithmetic overflow");
         if (immediateOutput) completedValue = *immediateOutput;
         else if (deviceOutput) {
             const auto count = storage::checkedElementCount(deviceOutput->shape);
@@ -1344,8 +1389,9 @@ PreparedGpuSubmission prepareGpuSubmission(std::shared_ptr<NativeGpuPendingState
             if (status == cudaErrorNotReady) return runtime::AsyncPollResult{};
             state->driver.check(status, "cuEventQuery");
             if (state->errorAllocation && state->errorHost != 0) {
-                state->failure = GpuError{GpuErrorCategory::SemanticFailure, "TH-SPEC-I64-OVERFLOW",
-                                          "checked i64 GPU arithmetic overflow"};
+                state->failure = GpuError{GpuErrorCategory::SemanticFailure,
+                    state->errorHost==2?"TH021-DIVIDE-BY-ZERO":"TH-SPEC-I64-OVERFLOW",
+                    state->errorHost==2?"research operation divided by zero":"checked i64 GPU arithmetic overflow"};
                 return runtime::AsyncPollResult{runtime::AsyncPollState::Failed,
                                                 asyncError(*state->failure)};
             }

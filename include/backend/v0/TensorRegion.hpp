@@ -22,6 +22,7 @@ enum class RegionOp {
     Add,
     Subtract,
     ElementMultiply,
+    Extension,
     Index,
     Unsupported
 };
@@ -36,6 +37,7 @@ struct RegionNode {
     std::vector<semantic::ValueId> indices;
     std::optional<std::int64_t> integer;
     std::optional<float> floating;
+    std::optional<extension::Operation> extensionOperation;
     std::vector<semantic::Check> checks;
     // TH-006 facts retained for physical planning. ResourceId is logical
     // provenance; it is never treated as a physical buffer identifier.

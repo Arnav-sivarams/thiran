@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frontend/v0/Ast.hpp"
+#include "extension/v0/Extension.hpp"
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -32,8 +33,8 @@ enum class EffectClass { Pure, CheckedFailure, Mutation, Rng, Io, Transfer, Asyn
 enum class AccessMode { Read, MutableBorrow, Consume };
 enum class Op { Integer, Float, Boolean, LoadBinding, TensorLiteral, Tuple, Copy, Move, MutableBorrow,
                 Negate, Add, Subtract, Multiply, ElementMultiply, Matmul, Index, Slice, Transpose, Sum,
-                StopGradient, ZeroLike, ReduceToShape, BroadcastToShape, Call };
-enum class CheckKind { Bounds, Broadcast, MatmulShape, Slice };
+                StopGradient, ZeroLike, ReduceToShape, BroadcastToShape, Extension, Call };
+enum class CheckKind { Bounds, Broadcast, MatmulShape, Slice, ExtensionShape };
 struct Selector {
     bool slice = false;
     std::optional<ValueId> index, start, end, step;
@@ -55,6 +56,7 @@ struct Instruction {
     std::uint32_t axis = 0;
     bool borrowedView = false;
     EffectClass effect = EffectClass::Pure;
+    std::optional<extension::Operation> extensionOperation;
 };
 struct Check {
     CheckKind kind = CheckKind::Bounds;

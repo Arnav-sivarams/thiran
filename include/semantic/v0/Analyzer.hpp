@@ -13,4 +13,5 @@ struct AnalysisResult {
     std::vector<SemanticDiagnostic> diagnostics;
 };
 AnalysisResult analyze(const thiran::v0::Module& syntax);
+AnalysisResult analyze(const thiran::v0::Module& syntax, extension::ExtensionRegistry& registry);
 }

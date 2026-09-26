@@ -296,6 +296,7 @@ private:
                 break;
             }
             case Op::TensorLiteral: value=fresh(i.id,ProvenanceKind::Fresh); break;
+            case Op::Extension: value=typedFresh(i.id,i.type,ProvenanceKind::Fresh); break;
             case Op::Tuple: {
                 value.kind=ProvenanceKind::NoResource;
                 std::function<ResourceValue(ResourceValue)> tupleAlias=[&](ResourceValue item) {

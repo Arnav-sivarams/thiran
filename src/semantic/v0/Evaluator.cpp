@@ -439,6 +439,9 @@ private:
                 } else if (c->kind==CheckKind::Slice) {
                     try { resolve(c->selectors.at(0),tensorValue(values.at(c->operands[0])),c->axis,values); }
                     catch (const RuntimeFailure&) { fail(c->failureId); }
+                } else if (c->kind==CheckKind::ExtensionShape) {
+                    if (tensorValue(values.at(c->operands[0])).shape!=tensorValue(values.at(c->operands[1])).shape)
+                        fail(c->failureId);
                 }
                 continue;
             }
@@ -550,6 +553,25 @@ private:
                 case Op::ZeroLike: result=zeroLike(operand(0)); break;
                 case Op::ReduceToShape: result=reduceToShape(operand(0),operand(1)); break;
                 case Op::BroadcastToShape: result=broadcastToShape(operand(0),operand(1),i.axis); break;
+                case Op::Extension: {
+                    if (!i.extensionOperation) fail("TH021-INVALID-DESCRIPTOR");
+                    std::vector<const RuntimeTensor*> inputs;
+                    for (std::size_t k=0;k<i.operands.size();++k) {
+                        const auto& tensor=tensorValue(operand(k));
+                        if (tensor.dtype!=TypeKind::F32) fail("TH021-DTYPE");
+                        inputs.push_back(&tensor);
+                    }
+                    for (const auto* tensor:inputs) if (tensor->shape!=inputs.front()->shape)
+                        fail("TH021-SHAPE");
+                    RuntimeTensor output{TypeKind::F32,inputs.front()->shape,{},{}};
+                    output.f32Values.reserve(inputs.front()->f32Values.size());
+                    for (std::size_t lane=0;lane<inputs.front()->f32Values.size();++lane) {
+                        std::vector<float> laneInputs; for (const auto* tensor:inputs) laneInputs.push_back(tensor->f32Values[lane]);
+                        try { output.f32Values.push_back(extension::evaluateRecipe(i.extensionOperation->forward,laneInputs)); }
+                        catch (const std::domain_error&) { fail("TH021-DIVIDE-BY-ZERO"); }
+                    }
+                    result.data=std::move(output); break;
+                }
                 case Op::Call: { std::vector<RuntimeValue> args; for (auto id:i.operands) args.push_back(values.at(id)); result=call(i.callee,args); break; }
             }
             if (!runtimeType(result,i.type)) fail("TH005-RUNTIME-TYPE");

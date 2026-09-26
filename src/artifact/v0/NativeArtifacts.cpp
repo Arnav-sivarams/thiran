@@ -170,6 +170,54 @@ semantic::ShapeFact readShape(Reader& reader) {
     }
     return shape;
 }
+void writeRecipe(Writer& writer,const extension::ScalarRecipe& recipe) {
+    writer.u32(recipe.inputCount); writer.u32(recipe.root); writer.u32(static_cast<std::uint32_t>(recipe.nodes.size()));
+    for (const auto& node:recipe.nodes) {
+        writer.u8(static_cast<std::uint8_t>(node.opcode)); writer.u32(node.left); writer.u32(node.right);
+        writer.u32(node.input); writer.u32(std::bit_cast<std::uint32_t>(node.constant));
+    }
+}
+extension::ScalarRecipe readRecipe(Reader& reader) {
+    extension::ScalarRecipe recipe; recipe.inputCount=reader.u32(); recipe.root=reader.u32();
+    const auto count=reader.u32(); if (count>256) throw std::runtime_error("ARTIFACT-REGION: extension recipe too large");
+    for (std::uint32_t index=0;index<count;++index)
+        recipe.nodes.push_back({static_cast<extension::ScalarOpcode>(reader.u8()),reader.u32(),reader.u32(),reader.u32(),
+                                std::bit_cast<float>(reader.u32())});
+    return recipe;
+}
+void writeOperation(Writer& writer,const extension::Operation& operation) {
+    writer.text(operation.extensionId); writer.text(operation.extensionVersion); writer.text(operation.name);
+    writer.text(operation.semanticVersion); writer.u32(operation.abiVersion); writer.u32(operation.arity);
+    writer.u32(operation.minimumRank); writer.u32(operation.maximumRank); writer.u32(operation.resultLikeInput);
+    writer.u8(operation.sameShape); writer.u8(static_cast<std::uint8_t>(operation.effect)); writer.u32(operation.backends);
+    writer.u8(operation.fusible); writeRecipe(writer,operation.forward); writer.u8(operation.derivative.has_value());
+    if (operation.derivative) {
+        writer.u64(operation.derivative->differentiableInputs); writer.u64(operation.derivative->savedInputs);
+        writer.u8(operation.derivative->savesOutput); writer.u32(static_cast<std::uint32_t>(operation.derivative->gradients.size()));
+        for (const auto& recipe:operation.derivative->gradients) writeRecipe(writer,recipe);
+    }
+    writer.text(operation.canonicalIdentity); writer.text(operation.descriptorDigest);
+}
+extension::Operation readOperation(Reader& reader) {
+    extension::Operation operation; operation.extensionId=reader.text(); operation.extensionVersion=reader.text();
+    operation.name=reader.text(); operation.semanticVersion=reader.text(); operation.abiVersion=reader.u32();
+    operation.arity=reader.u32(); operation.minimumRank=reader.u32(); operation.maximumRank=reader.u32();
+    operation.resultLikeInput=reader.u32(); operation.sameShape=reader.u8();
+    operation.effect=static_cast<extension::EffectV0>(reader.u8()); operation.backends=reader.u32(); operation.fusible=reader.u8();
+    operation.forward=readRecipe(reader);
+    if (reader.u8()) {
+        extension::Derivative derivative; derivative.differentiableInputs=reader.u64(); derivative.savedInputs=reader.u64();
+        derivative.savesOutput=reader.u8(); const auto count=reader.u32();
+        if (count>8) throw std::runtime_error("ARTIFACT-REGION: extension gradient count too large");
+        for (std::uint32_t index=0;index<count;++index) derivative.gradients.push_back(readRecipe(reader));
+        operation.derivative=std::move(derivative);
+    }
+    operation.canonicalIdentity=reader.text(); operation.descriptorDigest=reader.text();
+    if (auto invalid=extension::validateOperation(operation)) throw std::runtime_error("ARTIFACT-REGION: "+*invalid);
+    if (operation.descriptorDigest!=extension::operationDigest(operation))
+        throw std::runtime_error("ARTIFACT-REGION: extension descriptor digest mismatch");
+    return operation;
+}
 template<class T>
 void writeIds(Writer& writer, const std::vector<T>& values) {
     writer.u32(static_cast<std::uint32_t>(values.size()));
@@ -206,6 +254,8 @@ std::vector<std::byte> serializeRegion(const backend::TensorRegion& region) {
         if (node.integer) writer.i64(*node.integer);
         writer.u8(node.floating.has_value());
         if (node.floating) writer.u32(std::bit_cast<std::uint32_t>(*node.floating));
+        writer.u8(node.extensionOperation.has_value());
+        if (node.extensionOperation) writeOperation(writer,*node.extensionOperation);
         writer.u32(static_cast<std::uint32_t>(node.checks.size()));
         for (const auto& check : node.checks) {
             writer.u8(static_cast<std::uint8_t>(check.kind));
@@ -245,6 +295,7 @@ backend::TensorRegion deserializeRegion(const std::vector<std::byte>& bytes) {
         node.indices = readIds<semantic::ValueId>(reader);
         if (reader.u8()) node.integer = reader.i64();
         if (reader.u8()) node.floating = std::bit_cast<float>(reader.u32());
+        if (reader.u8()) node.extensionOperation=readOperation(reader);
         const auto checkCount = reader.u32();
         if (checkCount > maxItems) throw std::runtime_error("ARTIFACT-REGION: invalid check count");
         for (std::uint32_t checkIndex = 0; checkIndex < checkCount; ++checkIndex) {
