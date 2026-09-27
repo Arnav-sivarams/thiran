@@ -55,7 +55,7 @@ endif()
 execute_process(COMMAND "${thiran}" --version WORKING_DIRECTORY "${TEST_BINARY_DIR}"
                 RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
 require_equal("${result}" "0" "version exit")
-require_equal("${output}" "Thiran 0.2.0-alpha-dev\n" "version output")
+require_equal("${output}" "Thiran 0.1.0\n" "version output")
 require_equal("${error}" "" "version stderr")
 
 execute_process(COMMAND "${thiran}" --help WORKING_DIRECTORY "${TEST_BINARY_DIR}"
@@ -216,7 +216,7 @@ execute_process(COMMAND "${second_prefix}/bin/thiran" --version
                 WORKING_DIRECTORY "${TEST_BINARY_DIR}"
                 RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
 require_equal("${result}" "0" "second-directory invocation")
-require_equal("${output}" "Thiran 0.2.0-alpha-dev\n" "second-directory version")
+require_equal("${output}" "Thiran 0.1.0\n" "second-directory version")
 
 foreach(token sudo curl wget .bashrc .profile)
     file(READ "${SOURCE_DIR}/scripts/install.sh" script)

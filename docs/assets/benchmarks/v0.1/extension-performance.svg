@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="chart-title chart-desc">
+<title id="chart-title">TH-021 extension performance</title>
+<desc id="chart-desc">Extension and built-in-equivalent medians for the qualified chain.</desc>
+<style>
+:root{color-scheme:light dark}.bg{fill:#ffffff}.fg{fill:#24292f}.muted{fill:#57606a}.grid{stroke:#d0d7de;stroke-width:1}.axis{stroke:#57606a;stroke-width:1.2}.title{font:600 22px system-ui,sans-serif}.subtitle{font:14px system-ui,sans-serif}.fg,.muted{font:13px system-ui,sans-serif}.legend{font:12.5px system-ui,sans-serif}.value{font:600 12px ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(prefers-color-scheme:dark){.bg{fill:#0d1117}.fg{fill:#e6edf3}.muted{fill:#8b949e}.grid{stroke:#30363d}.axis{stroke:#8b949e}}
+</style>
+<rect class="bg" width="960" height="560" rx="8"/>
+<text x="24.0" y="35.0" class="title" text-anchor="start">TH-021 extension performance</text>
+<text x="24.0" y="61.0" class="subtitle muted" text-anchor="start">Qualified research_square_linear chain · no universal extension-performance claim</text>
+<line x1="295.0" y1="114.0" x2="295.0" y2="394.0" class="grid"/>
+<text x="295.0" y="418.0" class="muted" text-anchor="middle">0.0e+00</text>
+<line x1="416.0" y1="114.0" x2="416.0" y2="394.0" class="grid"/>
+<text x="416.0" y="418.0" class="muted" text-anchor="middle">120</text>
+<line x1="537.0" y1="114.0" x2="537.0" y2="394.0" class="grid"/>
+<text x="537.0" y="418.0" class="muted" text-anchor="middle">240</text>
+<line x1="658.0" y1="114.0" x2="658.0" y2="394.0" class="grid"/>
+<text x="658.0" y="418.0" class="muted" text-anchor="middle">360</text>
+<line x1="779.0" y1="114.0" x2="779.0" y2="394.0" class="grid"/>
+<text x="779.0" y="418.0" class="muted" text-anchor="middle">480</text>
+<line x1="900.0" y1="114.0" x2="900.0" y2="394.0" class="grid"/>
+<text x="900.0" y="418.0" class="muted" text-anchor="middle">600</text>
+<text x="597.5" y="442.0" class="muted" text-anchor="middle">median ms · zero-based</text>
+<text x="277.0" y="147.0" class="fg" text-anchor="end">CPU generic extension</text>
+<line x1="295.0" y1="142.0" x2="759.7" y2="142.0" stroke="#0969da" stroke-width="8" stroke-linecap="round" opacity="0.65"/>
+<circle cx="759.7" cy="142.0" r="7" fill="#0969da" data-benchmark="extension_chain" data-implementation="generic_extension" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="460812367.5" data-rendered-ms="460.812"><title>CPU generic extension · research_square_linear chain: 460.812 ms</title></circle>
+<text x="771.7" y="146.0" class="value fg" text-anchor="start">460.812 ms</text>
+<text x="277.0" y="215.0" class="fg" text-anchor="end">CPU built-in equivalent</text>
+<line x1="295.0" y1="210.0" x2="792.6" y2="210.0" stroke="#cf222e" stroke-width="8" stroke-linecap="round" opacity="0.65"/>
+<circle cx="792.6" cy="210.0" r="7" fill="#cf222e" data-benchmark="extension_chain" data-implementation="builtin_equivalent" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="493520583.5" data-rendered-ms="493.521"><title>CPU built-in equivalent · research_square_linear chain: 493.521 ms</title></circle>
+<text x="804.6" y="214.0" class="value fg" text-anchor="start">493.521 ms</text>
+<text x="277.0" y="283.0" class="fg" text-anchor="end">GPU generic extension</text>
+<line x1="295.0" y1="278.0" x2="652.5" y2="278.0" stroke="#1a7f37" stroke-width="8" stroke-linecap="round" opacity="0.65"/>
+<circle cx="652.5" cy="278.0" r="7" fill="#1a7f37" data-benchmark="extension_chain" data-implementation="generic_extension" data-backend="gpu" data-size="1048576" data-timing-scope="transfer_inclusive_synchronized_host_wall" data-median-ns="354548899" data-rendered-ms="354.549"><title>GPU generic extension · research_square_linear chain: 354.549 ms</title></circle>
+<text x="664.5" y="282.0" class="value fg" text-anchor="start">354.549 ms</text>
+<text x="277.0" y="351.0" class="fg" text-anchor="end">GPU built-in equivalent</text>
+<line x1="295.0" y1="346.0" x2="661.2" y2="346.0" stroke="#9a6700" stroke-width="8" stroke-linecap="round" opacity="0.65"/>
+<circle cx="661.2" cy="346.0" r="7" fill="#9a6700" data-benchmark="extension_chain" data-implementation="builtin_equivalent" data-backend="gpu" data-size="1048576" data-timing-scope="transfer_inclusive_synchronized_host_wall" data-median-ns="363125249" data-rendered-ms="363.125"><title>GPU built-in equivalent · research_square_linear chain: 363.125 ms</title></circle>
+<text x="673.2" y="350.0" class="value fg" text-anchor="start">363.125 ms</text>
+<text x="24.0" y="538.0" class="muted" text-anchor="start">Source: TH-023-machine.json · SHA-256 04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31</text>
+</svg>

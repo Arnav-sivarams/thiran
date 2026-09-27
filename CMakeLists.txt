@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.20)
 
 file(READ "${CMAKE_SOURCE_DIR}/VERSION" THIRAN_VERSION_FILE)
-if(NOT THIRAN_VERSION_FILE STREQUAL "0.2.0-alpha-dev\n")
-    message(FATAL_ERROR "VERSION must contain exactly 0.2.0-alpha-dev and one newline")
+if(NOT THIRAN_VERSION_FILE STREQUAL "0.1.0\n")
+    message(FATAL_ERROR "VERSION must contain exactly 0.1.0 and one newline")
 endif()
 string(STRIP "${THIRAN_VERSION_FILE}" THIRAN_VERSION)
-if(NOT THIRAN_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)-([0-9A-Za-z.-]+)$")
-    message(FATAL_ERROR "VERSION must use numeric SemVer with a prerelease suffix")
+if(NOT THIRAN_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-([0-9A-Za-z.-]+))?$")
+    message(FATAL_ERROR "VERSION must use SemVer")
 endif()
 set(THIRAN_VERSION_MAJOR "${CMAKE_MATCH_1}")
 set(THIRAN_VERSION_MINOR "${CMAKE_MATCH_2}")
 set(THIRAN_VERSION_PATCH "${CMAKE_MATCH_3}")
-set(THIRAN_VERSION_PRERELEASE "${CMAKE_MATCH_4}")
+set(THIRAN_VERSION_PRERELEASE "${CMAKE_MATCH_5}")
 
 project(Thiran VERSION "${THIRAN_VERSION_MAJOR}.${THIRAN_VERSION_MINOR}.${THIRAN_VERSION_PATCH}")
 
@@ -676,5 +676,11 @@ if(NOT THIRAN_V0_ONLY_TESTING)
         -DTEST_BINARY_DIR=${CMAKE_BINARY_DIR}/function-integration-tests
         -DPYTHON_EXECUTABLE=${THIRAN_TEST_PYTHON}
         -P ${CMAKE_SOURCE_DIR}/tests/integration/FunctionIntegrationTests.cmake)
+
+    add_test(NAME TH025ReleaseStructure
+        COMMAND ${THIRAN_TEST_PYTHON}
+            ${CMAKE_SOURCE_DIR}/scripts/release/validate_v0_1.py
+            --source-root ${CMAKE_SOURCE_DIR}
+            --cli $<TARGET_FILE:Thiran>)
 endif()
 endif()

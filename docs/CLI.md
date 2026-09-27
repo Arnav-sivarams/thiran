@@ -32,7 +32,7 @@ lowercase executable:
 ./build/debug/thiran doctor
 ```
 
-`--version` prints exactly `Thiran 0.2.0-alpha-dev`. `doctor` reports Linux/WSL platform, temporary-directory, Python, Torch, optional CUDA, and `full`, `compiler-only`, or `unusable` mode. Python and Torch are optional for compilation and required only to execute generated Python artifacts.
+`--version` prints exactly `Thiran 0.1.0`. `doctor` reports Linux/WSL platform, temporary-directory, Python, Torch, optional CUDA, and `full`, `compiler-only`, or `unusable` mode. Python and Torch are optional for compilation and required only to execute legacy generated Python artifacts.
 
 Normal mode preserves the existing verbose compiler path and writes `generated.py` and `graph.dot` in its working directory. Planning modes stop before scheduling and backend emission and do not modify those default artifacts.
 

@@ -1,6 +1,6 @@
 # Stability and compatibility policy (TH-001)
 
-**Present status:** `0.2.0-alpha-dev` is experimental. This policy defines a release gate and future obligations; it does not retroactively make current R12 syntax, `.pt` bundles, generated Python, CLI output, or Region plans stable interfaces.
+**Present status:** Thiran 0.1.0 is an experimental V0 technical release. This policy defines future obligations; it does not make V0 syntax, `.pt` bundles, generated Python, CLI output, Region plans, or persistent ABIs stable across future 0.x releases.
 
 ## Specification ownership and staging
 

@@ -1,0 +1,142 @@
+{
+  "schema": "thiran.qualification.th025.v1",
+  "checkpoint": "TH-025",
+  "status": "TH-025 PASS",
+  "completed_utc": "2026-09-27T03:48:32Z",
+  "release": {
+    "product_name": "Thiran",
+    "product_version": "0.1.0",
+    "language_generation": "V0",
+    "release_base_commit": "79f8fe5096d70100b9793b0d5018048f57a18c92",
+    "release_commit": null
+  },
+  "environment": {
+    "platform": "Linux 6.18.33.2-microsoft-standard-WSL2 x86_64",
+    "userspace": "Ubuntu 24.04, glibc 2.39",
+    "compiler": "GCC 13.3.0",
+    "cmake": "3.28.3",
+    "ninja": "1.11.1",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+      "compute_capability": "8.6",
+      "driver": "610.62",
+      "physical_execution": true
+    }
+  },
+  "source_package": {
+    "filename": "thiran-0.1.0-a.tar.gz",
+    "sha256": "c0ee3dd481118b22a919f1932547b7373f2d0d40b9abde64313d631e92637750",
+    "size_bytes": 578743,
+    "file_count": 422,
+    "archive_reproducibility": "PASS",
+    "second_archive_sha256": "c0ee3dd481118b22a919f1932547b7373f2d0d40b9abde64313d631e92637750",
+    "qualification_result_in_archive": false,
+    "qualification_result_reason": "The machine result is written after the qualified source archive hash is frozen.",
+    "hygiene": "PASS"
+  },
+  "build_modes": {
+    "debug": {
+      "build": "PASS",
+      "tests": "42/42 PASS"
+    },
+    "release": {
+      "build": "PASS",
+      "tests": "42/42 PASS"
+    },
+    "cpu_only_clean_source_copy": {
+      "configuration": "Release, BUILD_TESTING=ON, THIRAN_ENABLE_NATIVE_GPU=OFF",
+      "fresh_build": "240/240 targets PASS",
+      "tests": "42/42 PASS",
+      "explicit_gpu_request": "GPU-BACKEND-NOT-BUILT",
+      "fallback": "NONE"
+    },
+    "gpu_enabled_debug": {
+      "build": "PASS",
+      "tests": "48/48 PASS",
+      "physical": true
+    },
+    "gpu_enabled_release_clean_source_copy": {
+      "configuration": "Release, BUILD_TESTING=OFF, THIRAN_ENABLE_NATIVE_GPU=ON",
+      "fresh_build": "149/149 targets PASS",
+      "public_physical_gpu_smoke": "PASS",
+      "nvcc_required": false,
+      "fallback": "NONE"
+    },
+    "strict_warnings": {
+      "flags": "-Wall -Wextra -Wpedantic -Wshadow",
+      "build": "PASS",
+      "compiler_warnings": 0,
+      "tests": "42/42 PASS"
+    }
+  },
+  "public_workflows": {
+    "cli_version": "PASS",
+    "cli_help": "PASS",
+    "example_check": "PASS",
+    "cpu_source_run": "PASS",
+    "cpu_artifact_build_inspect_run": "PASS",
+    "gpu_source_run": "PASS",
+    "gpu_artifact_build_inspect_run": "PASS",
+    "gpu_fallback": "NONE",
+    "extension_build_and_explicit_load": "PASS",
+    "extension_cpu_run": "PASS",
+    "extension_gpu_run": "PASS",
+    "extension_cpu_artifact_plugin_free_run": "PASS",
+    "extension_gpu_artifact_plugin_free_run": "PASS",
+    "model_inspect_cpu_run": "PASS via V0ModelDeploymentTests production CLI path",
+    "model_inspect_cpu_gpu_run": "PASS via V0ModelGpuIntegrationTests production CLI path"
+  },
+  "protected_evidence": {
+    "th023_sha256": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31",
+    "th023_structure": "PASS",
+    "th024_sha256": "505b82dd929ebf5bf93dbbdf392ac4d5c4ffebeb56524bfbf6d16407daa7217f",
+    "th024_structure": "PASS"
+  },
+  "benchmark_graphs": {
+    "source_path": "benchmarks/results/TH-023-machine.json",
+    "source_sha256": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31",
+    "generator": "scripts/release/generate_benchmark_graphs.py",
+    "deterministic_regeneration": "PASS",
+    "raw_value_cross_check": "42/42 PASS",
+    "readme_references": "6/6 PASS",
+    "assets": {
+      "cpu-elementwise-median.svg": "e6507055998e3324ade100d633321d7174d40ad7d091773a3a4b451ff631dcb7",
+      "gpu-transfer-inclusive-median.svg": "6c5713427353a18d06e0338612d8e5b1387fcbca520db8bd20c39baae54bb20e",
+      "fusion-effect.svg": "d17dac280af9a6e3a05802c7c49aa439a392e844a1725e71e7cdeab08ead24c0",
+      "source-vs-artifact.svg": "fee9b0da49f84d207cceb7532ca959b42f7e449e2012390456544efeaaee3632",
+      "extension-performance.svg": "74f42faa41d0e1ca06718f131738e9f05bd9084b93d57ade82769e57bed22d74",
+      "deployment-overhead.svg": "a8c921fdc7331633acd5b959bbab0f88d136230aeebf1d2913be46acc353ea0b"
+    }
+  },
+  "sanitizers": {
+    "asan_ubsan": {
+      "status": "42/42 PASS",
+      "leak_detection": false
+    },
+    "lsan": {
+      "status": "UNAVAILABLE",
+      "reason": "TH-024 recorded ptrace/environment incompatibility"
+    },
+    "tsan": {
+      "status": "UNAVAILABLE",
+      "reason": "TH-024 toolchain/runtime could not produce useful host-concurrency evidence"
+    },
+    "compute_sanitizer": {
+      "status": "UNAVAILABLE",
+      "reason": "not installed"
+    }
+  },
+  "limitations": {
+    "cpu_performance_debt": "QUALIFIED AND PROMINENT",
+    "transfer_inclusive_gpu_performance_debt": "QUALIFIED AND PROMINENT",
+    "cross_machine_reproducibility": "NOT QUALIFIED",
+    "cross_gpu_portability": "NOT QUALIFIED",
+    "windows_native": "NOT SUPPORTED",
+    "macos": "NOT SUPPORTED",
+    "portable_single_file": "DEFERRED TO TH-026",
+    "recurrent_scan_reverse_ad": "NOT SUPPORTED",
+    "malicious_extension_sandbox": "NOT SUPPORTED",
+    "artifact_signatures": "NOT SUPPORTED",
+    "package_ecosystem": "NOT SUPPORTED"
+  }
+}

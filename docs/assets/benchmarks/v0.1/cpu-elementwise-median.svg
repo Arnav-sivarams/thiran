@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="chart-title chart-desc">
+<title id="chart-title">CPU elementwise medians</title>
+<desc id="chart-desc">Median CPU times for six comparable implementations over three sizes.</desc>
+<style>
+:root{color-scheme:light dark}.bg{fill:#ffffff}.fg{fill:#24292f}.muted{fill:#57606a}.grid{stroke:#d0d7de;stroke-width:1}.axis{stroke:#57606a;stroke-width:1.2}.title{font:600 22px system-ui,sans-serif}.subtitle{font:14px system-ui,sans-serif}.fg,.muted{font:13px system-ui,sans-serif}.legend{font:12.5px system-ui,sans-serif}.value{font:600 12px ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(prefers-color-scheme:dark){.bg{fill:#0d1117}.fg{fill:#e6edf3}.muted{fill:#8b949e}.grid{stroke:#30363d}.axis{stroke:#8b949e}}
+</style>
+<rect class="bg" width="960" height="560" rx="8"/>
+<text x="24.0" y="35.0" class="title" text-anchor="start">CPU elementwise medians</text>
+<text x="24.0" y="61.0" class="subtitle muted" text-anchor="start">Qualified f32 chain · warm in-process host wall time · log scale</text>
+<line x1="90.0" y1="472.0" x2="740.0" y2="472.0" class="grid"/>
+<text x="80.0" y="476.0" class="muted" text-anchor="end">1.0e-04</text>
+<line x1="90.0" y1="429.5" x2="740.0" y2="429.5" class="grid"/>
+<text x="80.0" y="433.5" class="muted" text-anchor="end">0.001</text>
+<line x1="90.0" y1="387.0" x2="740.0" y2="387.0" class="grid"/>
+<text x="80.0" y="391.0" class="muted" text-anchor="end">0.01</text>
+<line x1="90.0" y1="344.5" x2="740.0" y2="344.5" class="grid"/>
+<text x="80.0" y="348.5" class="muted" text-anchor="end">0.1</text>
+<line x1="90.0" y1="302.0" x2="740.0" y2="302.0" class="grid"/>
+<text x="80.0" y="306.0" class="muted" text-anchor="end">1</text>
+<line x1="90.0" y1="259.5" x2="740.0" y2="259.5" class="grid"/>
+<text x="80.0" y="263.5" class="muted" text-anchor="end">10</text>
+<line x1="90.0" y1="217.0" x2="740.0" y2="217.0" class="grid"/>
+<text x="80.0" y="221.0" class="muted" text-anchor="end">100</text>
+<line x1="90.0" y1="174.5" x2="740.0" y2="174.5" class="grid"/>
+<text x="80.0" y="178.5" class="muted" text-anchor="end">1,000</text>
+<line x1="90.0" y1="132.0" x2="740.0" y2="132.0" class="grid"/>
+<text x="80.0" y="136.0" class="muted" text-anchor="end">10,000</text>
+<line x1="90.0" y1="132.0" x2="90.0" y2="472.0" class="axis"/>
+<line x1="90.0" y1="472.0" x2="740.0" y2="472.0" class="axis"/>
+<text x="24.0" y="302.0" class="muted" text-anchor="middle" transform="rotate(-90 24.0 302.0)">median milliseconds · logarithmic</text>
+<text x="90.0" y="496.0" class="fg" text-anchor="middle">small</text>
+<text x="90.0" y="514.0" class="muted" text-anchor="middle">1,024</text>
+<text x="415.0" y="496.0" class="fg" text-anchor="middle">medium</text>
+<text x="415.0" y="514.0" class="muted" text-anchor="middle">1,048,576</text>
+<text x="740.0" y="496.0" class="fg" text-anchor="middle">large</text>
+<text x="740.0" y="514.0" class="muted" text-anchor="middle">16,777,216</text>
+<polyline points="90.0,317.1 415.0,187.9 740.0,136.3" fill="none" stroke="#0969da" stroke-width="2.3"/>
+<circle cx="90.0" cy="317.1" r="5" fill="#0969da" data-benchmark="elementwise_chain" data-implementation="thiran_fused" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="440079.5" data-rendered-ms="0.44008"><title>Thiran fused · small · 1,024: 0.44008 ms</title></circle>
+<circle cx="415.0" cy="187.9" r="5" fill="#0969da" data-benchmark="elementwise_chain" data-implementation="thiran_fused" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="483063936.5" data-rendered-ms="483.064"><title>Thiran fused · medium · 1,048,576: 483.064 ms</title></circle>
+<circle cx="740.0" cy="136.3" r="5" fill="#0969da" data-benchmark="elementwise_chain" data-implementation="thiran_fused" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="7922425288.5" data-rendered-ms="7922.43"><title>Thiran fused · large · 16,777,216: 7922.43 ms</title></circle>
+<line x1="755" y1="136" x2="779" y2="136" stroke="#0969da" stroke-width="2.5"/>
+<circle cx="767" cy="136" r="4" fill="#0969da"/>
+<text x="790.0" y="140.0" class="legend fg" text-anchor="start">Thiran fused</text>
+<polyline points="90.0,313.7 415.0,184.1 740.0,132.4" fill="none" stroke="#cf222e" stroke-width="2.3"/>
+<circle cx="90.0" cy="313.7" r="5" fill="#cf222e" data-benchmark="elementwise_chain" data-implementation="thiran_unfused" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="531936.5" data-rendered-ms="0.531937"><title>Thiran unfused · small · 1,024: 0.531937 ms</title></circle>
+<circle cx="415.0" cy="184.1" r="5" fill="#cf222e" data-benchmark="elementwise_chain" data-implementation="thiran_unfused" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="594992974.5" data-rendered-ms="594.993"><title>Thiran unfused · medium · 1,048,576: 594.993 ms</title></circle>
+<circle cx="740.0" cy="132.4" r="5" fill="#cf222e" data-benchmark="elementwise_chain" data-implementation="thiran_unfused" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="9788085281" data-rendered-ms="9788.09"><title>Thiran unfused · large · 16,777,216: 9788.09 ms</title></circle>
+<line x1="755" y1="167" x2="779" y2="167" stroke="#cf222e" stroke-width="2.5"/>
+<circle cx="767" cy="167" r="4" fill="#cf222e"/>
+<text x="790.0" y="171.0" class="legend fg" text-anchor="start">Thiran unfused</text>
+<polyline points="90.0,455.4 415.0,294.2 740.0,228.3" fill="none" stroke="#1a7f37" stroke-width="2.3"/>
+<circle cx="90.0" cy="455.4" r="5" fill="#1a7f37" data-benchmark="elementwise_chain" data-implementation="cpp_fused" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="246.43798828125" data-rendered-ms="0.000246438"><title>optimized C++ fused · small · 1,024: 0.000246438 ms</title></circle>
+<circle cx="415.0" cy="294.2" r="5" fill="#1a7f37" data-benchmark="elementwise_chain" data-implementation="cpp_fused" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="1524198.375" data-rendered-ms="1.5242"><title>optimized C++ fused · medium · 1,048,576: 1.5242 ms</title></circle>
+<circle cx="740.0" cy="228.3" r="5" fill="#1a7f37" data-benchmark="elementwise_chain" data-implementation="cpp_fused" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="54116213.5" data-rendered-ms="54.1162"><title>optimized C++ fused · large · 16,777,216: 54.1162 ms</title></circle>
+<line x1="755" y1="198" x2="779" y2="198" stroke="#1a7f37" stroke-width="2.5"/>
+<circle cx="767" cy="198" r="4" fill="#1a7f37"/>
+<text x="790.0" y="202.0" class="legend fg" text-anchor="start">optimized C++ fused</text>
+<polyline points="90.0,431.3 415.0,262.4 740.0,196.7" fill="none" stroke="#9a6700" stroke-width="2.3"/>
+<circle cx="90.0" cy="431.3" r="5" fill="#9a6700" data-benchmark="elementwise_chain" data-implementation="cpp_materialized" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="906.947509765625" data-rendered-ms="0.000906948"><title>optimized C++ materialized · small · 1,024: 0.000906948 ms</title></circle>
+<circle cx="415.0" cy="262.4" r="5" fill="#9a6700" data-benchmark="elementwise_chain" data-implementation="cpp_materialized" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="8526905.25" data-rendered-ms="8.52691"><title>optimized C++ materialized · medium · 1,048,576: 8.52691 ms</title></circle>
+<circle cx="740.0" cy="196.7" r="5" fill="#9a6700" data-benchmark="elementwise_chain" data-implementation="cpp_materialized" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="300285886.5" data-rendered-ms="300.286"><title>optimized C++ materialized · large · 16,777,216: 300.286 ms</title></circle>
+<line x1="755" y1="229" x2="779" y2="229" stroke="#9a6700" stroke-width="2.5"/>
+<circle cx="767" cy="229" r="4" fill="#9a6700"/>
+<text x="790.0" y="233.0" class="legend fg" text-anchor="start">optimized C++ materialized</text>
+<polyline points="90.0,410.9 415.0,277.6 740.0,203.9" fill="none" stroke="#8250df" stroke-width="2.3"/>
+<circle cx="90.0" cy="410.9" r="5" fill="#8250df" data-benchmark="elementwise_chain" data-implementation="numpy_eager" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="2745.68359375" data-rendered-ms="0.00274568"><title>NumPy eager · small · 1,024: 0.00274568 ms</title></circle>
+<circle cx="415.0" cy="277.6" r="5" fill="#8250df" data-benchmark="elementwise_chain" data-implementation="numpy_eager" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="3745725.125" data-rendered-ms="3.74573"><title>NumPy eager · medium · 1,048,576: 3.74573 ms</title></circle>
+<circle cx="740.0" cy="203.9" r="5" fill="#8250df" data-benchmark="elementwise_chain" data-implementation="numpy_eager" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="203870675.5" data-rendered-ms="203.871"><title>NumPy eager · large · 16,777,216: 203.871 ms</title></circle>
+<line x1="755" y1="260" x2="779" y2="260" stroke="#8250df" stroke-width="2.5"/>
+<circle cx="767" cy="260" r="4" fill="#8250df"/>
+<text x="790.0" y="264.0" class="legend fg" text-anchor="start">NumPy eager</text>
+<polyline points="90.0,392.5 415.0,275.2 740.0,195.5" fill="none" stroke="#bf3989" stroke-width="2.3"/>
+<circle cx="90.0" cy="392.5" r="5" fill="#bf3989" data-benchmark="elementwise_chain" data-implementation="pytorch_eager_single_thread" data-backend="cpu" data-size="1024" data-timing-scope="warm_in_process_host_wall" data-median-ns="7428.435546875" data-rendered-ms="0.00742844"><title>PyTorch eager · 1 thread · small · 1,024: 0.00742844 ms</title></circle>
+<circle cx="415.0" cy="275.2" r="5" fill="#bf3989" data-benchmark="elementwise_chain" data-implementation="pytorch_eager_single_thread" data-backend="cpu" data-size="1048576" data-timing-scope="warm_in_process_host_wall" data-median-ns="4266187.4375" data-rendered-ms="4.26619"><title>PyTorch eager · 1 thread · medium · 1,048,576: 4.26619 ms</title></circle>
+<circle cx="740.0" cy="195.5" r="5" fill="#bf3989" data-benchmark="elementwise_chain" data-implementation="pytorch_eager_single_thread" data-backend="cpu" data-size="16777216" data-timing-scope="warm_in_process_host_wall" data-median-ns="320478196.5" data-rendered-ms="320.478"><title>PyTorch eager · 1 thread · large · 16,777,216: 320.478 ms</title></circle>
+<line x1="755" y1="291" x2="779" y2="291" stroke="#bf3989" stroke-width="2.5"/>
+<circle cx="767" cy="291" r="4" fill="#bf3989"/>
+<text x="790.0" y="295.0" class="legend fg" text-anchor="start">PyTorch eager · 1 thread</text>
+<text x="24.0" y="538.0" class="muted" text-anchor="start">Source: TH-023-machine.json · SHA-256 04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31</text>
+</svg>

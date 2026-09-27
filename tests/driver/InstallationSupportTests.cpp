@@ -11,13 +11,13 @@ int failures = 0;
 
 void testVersion()
 {
-    CHECK(thiran::version::string == "0.2.0-alpha-dev");
+    CHECK(thiran::version::string == "0.1.0");
     CHECK(thiran::version::major == 0);
-    CHECK(thiran::version::minor == 2);
+    CHECK(thiran::version::minor == 1);
     CHECK(thiran::version::patch == 0);
-    CHECK(thiran::version::prerelease == "alpha-dev");
+    CHECK(thiran::version::prerelease.empty());
     CHECK(std::string("Thiran ") + std::string(thiran::version::string) ==
-          "Thiran 0.2.0-alpha-dev");
+          "Thiran 0.1.0");
 }
 
 void testReports()
@@ -27,7 +27,7 @@ void testReports()
     const DoctorProbeResult full{true, true, true, true, true};
     const std::string expected =
         "Thiran doctor\n"
-        "  compiler: ok (0.2.0-alpha-dev)\n"
+        "  compiler: ok (0.1.0)\n"
         "  platform: linux\n"
         "  temporary-directory: ok\n"
         "  python: available\n"

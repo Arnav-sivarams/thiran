@@ -1,0 +1,34 @@
+{
+  "schema": "thiran.release.v1",
+  "product_name": "Thiran",
+  "product_version": "0.1.0",
+  "release_name": "V0.1 experimental technical release",
+  "language_generation": "V0",
+  "release_base_commit": "79f8fe5096d70100b9793b0d5018048f57a18c92",
+  "release_commit": null,
+  "release_commit_policy": "Set and validate only after the reviewed TH-025 work is committed.",
+  "abi": {
+    "artifact_format_version": 0,
+    "compiler_artifact_abi": 1,
+    "native_runtime_abi": 1,
+    "extension_abi": 1,
+    "model_bundle_format_version": 0,
+    "model_runtime_abi": 1,
+    "training_checkpoint_format_version": 0,
+    "training_checkpoint_abi": 1
+  },
+  "qualified_environment": {
+    "platform": "Ubuntu 24.04 on WSL2, x86_64, glibc 2.39",
+    "cpu_architecture": "x86_64",
+    "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+    "gpu_compute_capability": "8.6",
+    "nvidia_driver": "610.62"
+  },
+  "accepted_evidence": {
+    "th023_path": "benchmarks/results/TH-023-machine.json",
+    "th023_sha256": "04f7c9d26d4dd749d308328dd69bd5f83f0c4c3786fe380de65a7d4fc0858e31",
+    "th024_path": "robustness/results/TH-024-machine.json",
+    "th024_sha256": "505b82dd929ebf5bf93dbbdf392ac4d5c4ffebeb56524bfbf6d16407daa7217f"
+  },
+  "release_qualification_status": "TH-025 PASS"
+}

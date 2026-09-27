@@ -1,6 +1,6 @@
 # Thiran language constitution (TH-001)
 
-**Status:** design target, not an implemented-language claim. The repository at `0.2.0-alpha-dev` remains an R12 tensor-dataflow compiler prototype. [SEMANTICS_V0.md](SEMANTICS_V0.md) records the initial semantic contract; [DECISIONS.md](DECISIONS.md) records its tradeoffs.
+**Status:** design target, not a complete implemented-language claim. Thiran 0.1.0 is a scoped experimental V0 technical release. [SEMANTICS_V0.md](SEMANTICS_V0.md) records the initial semantic contract; [DECISIONS.md](DECISIONS.md) records its tradeoffs.
 
 ## Identity and users
 
@@ -18,7 +18,7 @@ The **future safe subset** must prevent memory unsafety through safe source cons
 
 ## Stability promise
 
-Once a language edition is declared stable, accepted ordinary source should keep its specified meaning across compatible compiler releases. Changes to syntax, typing, indexing, ownership, numeric contracts, or public library behavior that alter existing accepted programs require an explicit breaking edition or major version. Deprecation has a published lifecycle. Stable-language conformance tests, independent of any one backend, govern the promise. The current `0.2.0-alpha-dev` language is experimental; it has no stable-source or native-ABI promise. See [COMPATIBILITY.md](COMPATIBILITY.md).
+Once a language edition is declared stable, accepted ordinary source should keep its specified meaning across compatible compiler releases. Changes to syntax, typing, indexing, ownership, numeric contracts, or public library behavior that alter existing accepted programs require an explicit breaking edition or major version. Deprecation has a published lifecycle. Stable-language conformance tests, independent of any one backend, govern the promise. The current 0.1.0 V0 language is experimental; it has no stable-source or native-ABI promise. See [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Execution modes
 

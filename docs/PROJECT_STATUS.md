@@ -1,9 +1,11 @@
 # Project status
 
-TH-024 qualifies the accepted V0 system under bounded deterministic repetition,
-corruption, controlled write failure, concurrency, resource churn, physical-GPU
-execution, and a clean copied-tree build. It is not a release decision,
-security proof, cross-machine claim, or cross-GPU portability claim.
+Thiran 0.1.0 completes the current compiler/runtime phase through TH-025 as a
+scoped experimental technical release. TH-024 supplies bounded robustness and
+same-environment reproducibility evidence; TH-023 supplies the performance
+evidence and records substantial CPU/GPU performance debt. This status is not
+a security proof, cross-machine claim, cross-GPU portability claim, or stable
+1.0 compatibility promise.
 
 Status terms describe repository evidence, not intent.
 
@@ -11,7 +13,7 @@ Status terms describe repository evidence, not intent.
 |---|---|---|---|---|
 | Frontend | IMPLEMENTED | `src/parser/`, examples and integration tests | Small assignment language and fixed operation set | Expand only with specified semantics and tests |
 | Graph IR | IMPLEMENTED | `include/ir/`, `src/ir/`, RegionIRTests | Single-result dataflow Nodes; no control flow | Preserve ownership invariants while evaluating extensions |
-| Source modules | IMPLEMENTED | `include/frontend/`, `src/frontend/`, SourceManagerTests, ModuleLinkerTests, ModuleCliTests | Explicit relative imports and exported tensor values only; no functions or packages | Add functions only after module semantics stabilize |
+| Source modules | IMPLEMENTED | `include/frontend/`, `src/frontend/`, SourceManagerTests, ModuleLinkerTests, ModuleCliTests | Explicit relative imports; no package ecosystem | Preserve deterministic linking and provenance |
 | Tensor functions | IMPLEMENTED | semantic/lowering harnesses and FunctionIntegrationTests | Compile-time top-level functions only; no captures or recursion | Preserve deterministic inlining and provenance |
 | Verification | IMPLEMENTED | `GraphVerifier`, RegionVerifier, RegionPlanVerifier | Covers current IR and operation model | Extend alongside any new semantics |
 | Optimization | PARTIAL | canonicalization, folding, rewrite, fusion, DCE in normal preparation | Conservative fixed pass set; no global optimizer claim | Measure and specify future transformations |
@@ -30,10 +32,20 @@ Status terms describe repository evidence, not intent.
 | Training checkpoints | IMPLEMENTED (REFERENCE V0) | `.thc` schema/integrity validation, transactional save, exact destroy/reload/resume tests | TH-011 f32 state and local files only; no authentication | Preserve explicit schema and optimizer-state compatibility |
 | Model deployment | IMPLEMENTED (REFERENCE V0) | `.thm` bundle, `thiran-model`, relocated CPU and physical-GPU equivalence tests | Narrow affine public ABI; trusted local native payloads; no service | Generalize only from additional accepted models |
 | Numerical graphics | IMPLEMENTED (CPU + NATIVE GPU V0) | shared typed Tensor geometry/clipping, CPU reference, CUDA Driver/PTX pixel raster/depth/interpolation, deterministic cube, async/interoperability tests | Runtime/library API only; GPU outputs materialize through D2H and later GPU numerics H2D again; no zero-copy, scene graph, source syntax, artifact ABI, AD, or performance claim | Review the structured CPU/GPU boundary before broader graphics work |
+| TH-018 | DEFERRED / OPTIONAL | checkpoint intentionally not accepted as required V0 scope | No implied missing release feature | Revisit only by separate authorization |
+| Performance | QUALIFIED (TH-023 V0 SCOPE) | frozen methodology, machine-readable evidence, optimized C++/framework controls, physical GPU | Current CPU and transfer-inclusive GPU paths are substantially slower on the qualified workload; not a broad competitiveness claim | Preserve evidence; optimize only in a future authorized checkpoint |
 | Robustness / reproducibility | QUALIFIED (TH-024 V0 SCOPE) | frozen methodology, machine-readable evidence, deterministic CPU/physical-GPU repetition, corruption, transactional writes, concurrency, soaks, sanitizers, and clean-copy qualification | One local machine and one RTX 3050 Ti architecture; real GPU OOM, cross-machine, cross-GPU, LSan, and Compute Sanitizer are not qualified | Conduct TH-024 architectural review before any release decision |
 | Adaptation | RESEARCH HYPOTHESIS | Strategy and Region infrastructure only | No profiling or runtime switching | Establish measurable policy hypotheses |
 | Triton | PARTIAL | emitter/code-generator scaffolding | Not a working execution backend | Prove legal lowering and execution independently |
 | Distributed planning | PARTIAL | partition and communication structures in normal path | Descriptive; not Region runtime movement | Define executable semantics |
 | Distributed execution | NOT IMPLEMENTED | No executing distributed runtime | No RPC or device-partition execution | Research only after local correctness |
-| Benchmarking | NOT IMPLEMENTED | Numerical correctness tests only | No performance result | Create reproducible benchmark methodology |
-| Release status | PARTIAL | reproducible local presets/docs/CI workflow | No selected license, tag, release notes, or package | Resolve release governance and packaging |
+| Benchmarking | IMPLEMENTED (TH-023 QUALIFICATION) | canonical result and structural validator | One machine/workload family; no marketing generalization | Add workloads only under frozen methodology |
+| Release status | QUALIFIED (TH-025 V0.1 SCOPE) | version authority, release/support docs, Apache-2.0 license, examples, ABI/manifest checks, clean source-copy builds and CPU/GPU release smoke | Source/repository release only; no release commit/tag/push in TH-025 and no portable binary package | Human final review, then separately commit/tag/push |
+
+## Future work (not implemented)
+
+- **TH-026:** portable single-file and cross-machine deployment.
+- **Future proof-system work:** theorem/proof infrastructure remains outside the
+  current compiler phase.
+- **Future local intelligence:** System-1, ThiranQL, and local-AI capabilities
+  are not part of Thiran 0.1.0.

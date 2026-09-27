@@ -1,0 +1,8 @@
+fn cumulative_step(value: i64, state: i64) -> (i64, i64) {
+    let next = state + value
+    return (next, next)
+}
+
+fn cumulative(values: Tensor<i64,1>, initial: i64) -> (Tensor<i64,1>, i64) {
+    return scan(cumulative_step, values, initial)
+}

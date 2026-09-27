@@ -58,23 +58,20 @@ This must report zero tests.
 
 ## CTest inventory
 
-Exactly fifteen registrations:
+Use CTest itself as the inventory authority because the V0 subsystem,
+physical-GPU, evidence-structure, and release-structure registrations grow with
+accepted checkpoints:
 
-1. `RegionIRTests`
-2. `RegionFormationTests`
-3. `StrategyClassificationTests`
-4. `RegionPlanTests`
-5. `RegionPlanCliSupportTests`
-6. `RegionPlanCliTests`
-7. `RegionPythonEmitterTests`
-8. `RegionExecutionTests`
-9. `RegionPythonRuntimeTests`
-10. `RegionRuntimeCliTests`
-11. `InstallationSupportTests`
-12. `InstallationCliTests`
-13. `SourceManagerTests`
-14. `ModuleLinkerTests`
-15. `ModuleCliTests`
+```bash
+ctest --test-dir build/debug -N
+ctest --test-dir build/gpu -N
+```
+
+The CPU presets contain the independent frontend/semantic/ownership/storage,
+AD/training/Scan, planning/native/artifact/model/graphics/extension/CLI,
+legacy Graph/Region, TH-023, TH-024, and TH-025 structural registrations. The
+GPU preset additionally contains physical integration registrations, which use
+exit 77 for unavailable hardware; a skip is not physical qualification.
 
 Run one test:
 
